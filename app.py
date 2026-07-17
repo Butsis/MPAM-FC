@@ -1,6 +1,5 @@
 import streamlit as st
 import pandas as pd
-import plotly.graph_objects as go
 
 # ----------------------------------------------------------------------------
 # Page config
@@ -12,28 +11,113 @@ st.set_page_config(
 )
 
 # ----------------------------------------------------------------------------
-# Style
+# Theme: orange & black
 # ----------------------------------------------------------------------------
+ORANGE = "#FF7A00"
+ORANGE_DARK = "#CC6200"
+BLACK = "#0d0d0d"
+CARD = "#161616"
+
 st.markdown(
-    """
+    f"""
     <style>
-    .stApp { background-color: #0e1117; }
-    .team-header {
-        background: linear-gradient(90deg, #1a3d1a 0%, #0e1117 100%);
-        padding: 1.2rem 1.5rem;
+    .stApp {{ background-color: {BLACK}; }}
+
+    .team-header {{
+        display: flex;
+        align-items: center;
+        gap: 1rem;
+        background: linear-gradient(90deg, #1a1a1a 0%, {BLACK} 100%);
+        padding: 1rem 1.5rem;
         border-radius: 12px;
         margin-bottom: 1.2rem;
-        border: 1px solid #2e5a2e;
-    }
-    .metric-card {
-        background-color: #161b22;
-        border: 1px solid #30363d;
-        border-radius: 10px;
-        padding: 0.8rem;
+        border: 1px solid {ORANGE_DARK};
+    }}
+    .badge {{
+        width: 56px;
+        height: 56px;
+        min-width: 56px;
+        border-radius: 50%;
+        background: radial-gradient(circle at 35% 30%, {ORANGE} 0%, {ORANGE_DARK} 70%);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-weight: 800;
+        font-size: 1.1rem;
+        color: {BLACK};
+        border: 2px solid {ORANGE};
+        box-shadow: 0 0 12px rgba(255,122,0,0.35);
+    }}
+    .team-name {{
+        font-size: 1.7rem;
+        font-weight: 800;
+        color: {ORANGE};
+        margin: 0;
+        letter-spacing: 0.02em;
+    }}
+    .team-sub {{
+        color: #b5b5b5;
+        margin: 0;
+        font-size: 0.85rem;
+    }}
+
+    .section-title {{
+        color: {ORANGE};
+        font-size: 1.05rem;
+        font-weight: 700;
+        margin-top: 1.3rem;
+        margin-bottom: 0.4rem;
+        border-bottom: 2px solid {ORANGE_DARK};
+        padding-bottom: 0.3rem;
+    }}
+
+    .stat-table {{
+        width: 100%;
+        border-collapse: collapse;
+        margin-bottom: 0.5rem;
+    }}
+    .stat-table td {{
+        padding: 0.45rem 0.7rem;
+        border-bottom: 1px solid #2a2a2a;
+        color: #e5e5e5;
+        font-size: 0.92rem;
+    }}
+    .stat-table td.label {{
+        color: #a3a3a3;
+    }}
+    .stat-table td.value {{
+        text-align: right;
+        font-weight: 700;
+        color: {ORANGE};
+    }}
+    .stat-table tr:last-child td {{
+        border-bottom: none;
+    }}
+
+    .headline-card {{
+        background-color: {CARD};
+        border: 1px solid #2a2a2a;
+        border-left: 4px solid {ORANGE};
+        border-radius: 8px;
+        padding: 0.7rem 1rem;
         text-align: center;
-    }
-    .metric-value { font-size: 1.6rem; font-weight: 700; color: #4ade80; }
-    .metric-label { font-size: 0.75rem; color: #9ca3af; text-transform: uppercase; letter-spacing: 0.05em; }
+    }}
+    .headline-value {{
+        font-size: 1.5rem;
+        font-weight: 800;
+        color: {ORANGE};
+    }}
+    .headline-label {{
+        font-size: 0.72rem;
+        color: #a3a3a3;
+        text-transform: uppercase;
+        letter-spacing: 0.05em;
+    }}
+
+    section[data-testid="stSidebar"] {{
+        background-color: #111111;
+        border-right: 1px solid {ORANGE_DARK};
+    }}
     </style>
     """,
     unsafe_allow_html=True,
@@ -52,7 +136,6 @@ def load_data():
     # Greek lookalike letters in the source file, so rename it explicitly.
     df = df.rename(columns={df.columns[0]: "NAME"})
     df = df[df["NAME"].notna()].copy()
-    # numeric columns -> fill NaN with 0 for stat math, keep name/position/text cols aside
     text_cols = ["NAME", "POSITION", "Playing Type", "Opponent", "Competition", "Outcome"]
     for col in df.columns:
         if col not in text_cols:
@@ -62,13 +145,16 @@ def load_data():
 df = load_data()
 
 # ----------------------------------------------------------------------------
-# Header
+# Header: badge + team name (placeholder badge until a real logo is provided)
 # ----------------------------------------------------------------------------
 st.markdown(
     """
     <div class="team-header">
-        <h1 style="margin:0; color:#f0f0f0;">⚽ MPAM FC — Player Cards</h1>
-        <p style="margin:0; color:#a0a0a0;">Match statistics dashboard · Playoffs</p>
+        <div class="badge">MPAM</div>
+        <div>
+            <p class="team-name">MPAM FC</p>
+            <p class="team-sub">Player Cards · Match Statistics</p>
+        </div>
     </div>
     """,
     unsafe_allow_html=True,
@@ -77,193 +163,147 @@ st.markdown(
 # ----------------------------------------------------------------------------
 # Sidebar - player filter
 # ----------------------------------------------------------------------------
-st.sidebar.header("🔍 Select Player")
+st.sidebar.markdown("### 🔍 Select Player")
 player_names = sorted(df["NAME"].unique().tolist())
 selected_player = st.sidebar.selectbox("Player", player_names)
 
-if len(df["Opponent"].dropna().unique()) > 0:
-    opp = df.loc[df["NAME"] == selected_player, "Opponent"].values
-    outcome = df.loc[df["NAME"] == selected_player, "Outcome"].values
-    if len(opp) and pd.notna(opp[0]):
-        st.sidebar.markdown(f"**Opponent:** {opp[0]}")
-    if len(outcome) and pd.notna(outcome[0]):
-        st.sidebar.markdown(f"**Result:** {outcome[0]}")
+opp = df.loc[df["NAME"] == selected_player, "Opponent"].values
+outcome = df.loc[df["NAME"] == selected_player, "Outcome"].values
+if len(opp) and pd.notna(opp[0]):
+    st.sidebar.markdown(f"**Opponent:** {opp[0]}")
+if len(outcome) and pd.notna(outcome[0]):
+    st.sidebar.markdown(f"**Result:** {outcome[0]}")
 
 st.sidebar.markdown("---")
-st.sidebar.caption("Tip: open this app on your phone and bookmark it for quick access to your stats after every match.")
+st.sidebar.caption("Open this app on your phone and bookmark it for quick access after every match.")
 
 row = df[df["NAME"] == selected_player].iloc[0]
 is_gk = str(row["POSITION"]).strip().upper() == "GK"
 
 # ----------------------------------------------------------------------------
-# Player card header
+# Helper to render a simple label/value table (no charts, no bars)
 # ----------------------------------------------------------------------------
-c1, c2, c3, c4 = st.columns([2, 1, 1, 1])
-with c1:
-    st.markdown(f"## {row['NAME']}")
-    st.markdown(f"**Position:** {row['POSITION']}")
-with c2:
-    st.markdown('<div class="metric-card"><div class="metric-value">%d</div><div class="metric-label">Minutes</div></div>' % row['MINUTES'], unsafe_allow_html=True)
-with c3:
-    st.markdown('<div class="metric-card"><div class="metric-value">%d</div><div class="metric-label">Goals</div></div>' % row['GOAL'], unsafe_allow_html=True)
-with c4:
-    st.markdown('<div class="metric-card"><div class="metric-value">%d</div><div class="metric-label">Assists</div></div>' % row['ASSISTS'], unsafe_allow_html=True)
-
-st.markdown("### ")
-
-# ----------------------------------------------------------------------------
-# Duels chart
-# ----------------------------------------------------------------------------
-st.subheader("🥊 Duels")
-
-duel_categories = ["Offensive", "Defensive", "Aerial"]
-duel_total = [row["TOTAL OFFENSIVE DUELS"], row["TOTAL DEFENSIVE DUELS"], row["TOTAL AERIAL DUELS"]]
-duel_won = [row["OFFENSIVE DUELS WON"], row["DEFENSIVE DUELS WON"], row["AERIAL DUES WON"]]
-duel_lost = [t - w for t, w in zip(duel_total, duel_won)]
-
-fig_duels = go.Figure()
-fig_duels.add_trace(go.Bar(
-    name="Won", x=duel_categories, y=duel_won,
-    marker_color="#4ade80", text=duel_won, textposition="auto",
-))
-fig_duels.add_trace(go.Bar(
-    name="Lost", x=duel_categories, y=duel_lost,
-    marker_color="#f87171", text=duel_lost, textposition="auto",
-))
-fig_duels.update_layout(
-    barmode="stack",
-    plot_bgcolor="rgba(0,0,0,0)",
-    paper_bgcolor="rgba(0,0,0,0)",
-    font_color="#e5e7eb",
-    height=350,
-    legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
-    margin=dict(t=30, b=20),
-)
-st.plotly_chart(fig_duels, use_container_width=True)
-
-duel_cols = st.columns(3)
-for i, cat in enumerate(duel_categories):
-    win_rate = (duel_won[i] / duel_total[i] * 100) if duel_total[i] > 0 else 0
-    duel_cols[i].metric(f"{cat} duel win rate", f"{win_rate:.0f}%", f"{int(duel_won[i])}/{int(duel_total[i])}")
-
-# ----------------------------------------------------------------------------
-# Possession lost / recovered chart
-# ----------------------------------------------------------------------------
-st.subheader("⚠️ Possession Lost vs Recovered")
-
-pcol1, pcol2 = st.columns(2)
-
-with pcol1:
-    lost_labels = ["Own Half", "Opp. Half"]
-    lost_values = [row["POSSESION LOST OWN HALF"], row["POSSESSION LOST OPPs HALF"]]
-    lost_led_to_shot = [row["POSSESSION LOST OWN HALF LED TO A SHOT"], row["POSSESSION LOST OPPs HALF LED TO A SHOT"]]
-
-    fig_lost = go.Figure()
-    fig_lost.add_trace(go.Bar(
-        name="Possession Lost", x=lost_labels, y=lost_values,
-        marker_color="#fb923c", text=lost_values, textposition="auto",
-    ))
-    fig_lost.add_trace(go.Bar(
-        name="...led to opp. shot", x=lost_labels, y=lost_led_to_shot,
-        marker_color="#dc2626", text=lost_led_to_shot, textposition="auto",
-    ))
-    fig_lost.update_layout(
-        barmode="group",
-        plot_bgcolor="rgba(0,0,0,0)",
-        paper_bgcolor="rgba(0,0,0,0)",
-        font_color="#e5e7eb",
-        height=320,
-        title="Possession Lost",
-        legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
-        margin=dict(t=60, b=20),
+def stat_table(pairs):
+    """pairs: list of (label, value) tuples"""
+    rows_html = "".join(
+        f'<tr><td class="label">{label}</td><td class="value">{value}</td></tr>'
+        for label, value in pairs
     )
-    st.plotly_chart(fig_lost, use_container_width=True)
+    st.markdown(f'<table class="stat-table">{rows_html}</table>', unsafe_allow_html=True)
 
-with pcol2:
-    rec_labels = ["Own Half", "Opp. Half"]
-    rec_values = [row["BALL RECOVERY OWN HALF"], row["BALL RECOVERY OPPs HALF"]]
-    rec_led_to_shot = [row["BALL RECOVERY OWN HALF LED TO A SHOT"], row["BALL RECOVERY OPPs HALF LED TO A SHOT"]]
 
-    fig_rec = go.Figure()
-    fig_rec.add_trace(go.Bar(
-        name="Ball Recovery", x=rec_labels, y=rec_values,
-        marker_color="#38bdf8", text=rec_values, textposition="auto",
-    ))
-    fig_rec.add_trace(go.Bar(
-        name="...led to our shot", x=rec_labels, y=rec_led_to_shot,
-        marker_color="#4ade80", text=rec_led_to_shot, textposition="auto",
-    ))
-    fig_rec.update_layout(
-        barmode="group",
-        plot_bgcolor="rgba(0,0,0,0)",
-        paper_bgcolor="rgba(0,0,0,0)",
-        font_color="#e5e7eb",
-        height=320,
-        title="Ball Recovery",
-        legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
-        margin=dict(t=60, b=20),
-    )
-    st.plotly_chart(fig_rec, use_container_width=True)
+def pct(won, total):
+    return f"{(won / total * 100):.0f}%" if total > 0 else "—"
+
+
+def fmt(n):
+    return f"{int(n)}" if float(n).is_integer() else f"{n}"
 
 # ----------------------------------------------------------------------------
-# Attacking output
+# Player header
 # ----------------------------------------------------------------------------
-st.subheader("🎯 Attacking Output")
+st.markdown(f"## {row['NAME']}")
+st.markdown(f"**Position:** {row['POSITION']}")
 
-shots_labels = ["Inside On", "Inside Off", "Inside Blocked", "Outside On", "Outside Off", "Outside Blocked"]
-shots_values = [
-    row["INSIDE ON TARGET"], row["INSIDE OFF TARGET"], row["INSIDE BLOCKED"],
-    row["OUTSIDE ON TARGET"], row["OUTSIDE OFF TARGET"], row["OUTSIDE BLOCKED"],
+c1, c2, c3, c4 = st.columns(4)
+headline = [
+    (c1, "Minutes", fmt(row["MINUTES"])),
+    (c2, "Goals", fmt(row["GOAL"])),
+    (c3, "Assists", fmt(row["ASSISTS"])),
+    (c4, "Key Passes", fmt(row["KEY PASSES"])),
 ]
-fig_shots = go.Figure(go.Bar(
-    x=shots_labels, y=shots_values,
-    marker_color=["#4ade80", "#facc15", "#94a3b8", "#4ade80", "#facc15", "#94a3b8"],
-    text=shots_values, textposition="auto",
-))
-fig_shots.update_layout(
-    plot_bgcolor="rgba(0,0,0,0)",
-    paper_bgcolor="rgba(0,0,0,0)",
-    font_color="#e5e7eb",
-    height=320,
-    margin=dict(t=20, b=20),
-)
-st.plotly_chart(fig_shots, use_container_width=True)
+for col, label, value in headline:
+    col.markdown(
+        f'<div class="headline-card"><div class="headline-value">{value}</div>'
+        f'<div class="headline-label">{label}</div></div>',
+        unsafe_allow_html=True,
+    )
 
-att_cols = st.columns(4)
-att_cols[0].metric("Key Passes", int(row["KEY PASSES"]))
-att_cols[1].metric("Big Chances Created", int(row["BIG CHANCES CREATED"]))
-att_cols[2].metric("Big Chances Scored", int(row["BIG CHANCES SCORED"]))
-att_cols[3].metric("Big Chances Missed", int(row["BIG CHANCES MISSED"]))
+# ----------------------------------------------------------------------------
+# Attacking
+# ----------------------------------------------------------------------------
+st.markdown('<div class="section-title">🎯 Attacking</div>', unsafe_allow_html=True)
+attack_col1, attack_col2 = st.columns(2)
+with attack_col1:
+    stat_table([
+        ("Goals", fmt(row["GOAL"])),
+        ("Assists", fmt(row["ASSISTS"])),
+        ("Key Passes", fmt(row["KEY PASSES"])),
+        ("Big Chances Created", fmt(row["BIG CHANCES CREATED"])),
+        ("Big Chances Scored", fmt(row["BIG CHANCES SCORED"])),
+        ("Big Chances Missed", fmt(row["BIG CHANCES MISSED"])),
+    ])
+with attack_col2:
+    stat_table([
+        ("Inside Shots On Target", fmt(row["INSIDE ON TARGET"])),
+        ("Inside Shots Off Target", fmt(row["INSIDE OFF TARGET"])),
+        ("Inside Shots Blocked", fmt(row["INSIDE BLOCKED"])),
+        ("Outside Shots On Target", fmt(row["OUTSIDE ON TARGET"])),
+        ("Outside Shots Off Target", fmt(row["OUTSIDE OFF TARGET"])),
+        ("Outside Shots Blocked", fmt(row["OUTSIDE BLOCKED"])),
+    ])
+
+# ----------------------------------------------------------------------------
+# Duels
+# ----------------------------------------------------------------------------
+st.markdown('<div class="section-title">🥊 Duels</div>', unsafe_allow_html=True)
+stat_table([
+    ("Offensive Duels", f'{fmt(row["OFFENSIVE DUELS WON"])} / {fmt(row["TOTAL OFFENSIVE DUELS"])} won ({pct(row["OFFENSIVE DUELS WON"], row["TOTAL OFFENSIVE DUELS"])})'),
+    ("Defensive Duels", f'{fmt(row["DEFENSIVE DUELS WON"])} / {fmt(row["TOTAL DEFENSIVE DUELS"])} won ({pct(row["DEFENSIVE DUELS WON"], row["TOTAL DEFENSIVE DUELS"])})'),
+    ("Aerial Duels", f'{fmt(row["AERIAL DUES WON"])} / {fmt(row["TOTAL AERIAL DUELS"])} won ({pct(row["AERIAL DUES WON"], row["TOTAL AERIAL DUELS"])})'),
+    ("Post-Duel Actions", f'{fmt(row["POST-DUEL ACTIONS SUCCESS"])} / {fmt(row["TOTAL POST-DUEL ACTIONS"])} success ({pct(row["POST-DUEL ACTIONS SUCCESS"], row["TOTAL POST-DUEL ACTIONS"])})'),
+    ("Second Balls", f'{fmt(row["SECOND BALLS WON"])} won / {fmt(row["SECOND BALLS LOST"])} lost'),
+    ("Long Balls", f'{fmt(row["SUCCESSFUL LONG BALLS"])} / {fmt(row["TOTAL LONG BALLS"])} successful ({pct(row["SUCCESSFUL LONG BALLS"], row["TOTAL LONG BALLS"])})'),
+])
+
+# ----------------------------------------------------------------------------
+# Possession
+# ----------------------------------------------------------------------------
+st.markdown('<div class="section-title">⚠️ Possession Lost & Recovered</div>', unsafe_allow_html=True)
+poss_col1, poss_col2 = st.columns(2)
+with poss_col1:
+    stat_table([
+        ("Lost — Own Half", fmt(row["POSSESION LOST OWN HALF"])),
+        ("...led to opp. shot", fmt(row["POSSESSION LOST OWN HALF LED TO A SHOT"])),
+        ("Lost — Opp. Half", fmt(row["POSSESSION LOST OPPs HALF"])),
+        ("...led to opp. shot", fmt(row["POSSESSION LOST OPPs HALF LED TO A SHOT"])),
+    ])
+with poss_col2:
+    stat_table([
+        ("Recovered — Own Half", fmt(row["BALL RECOVERY OWN HALF"])),
+        ("...led to our shot", fmt(row["BALL RECOVERY OWN HALF LED TO A SHOT"])),
+        ("Recovered — Opp. Half", fmt(row["BALL RECOVERY OPPs HALF"])),
+        ("...led to our shot", fmt(row["BALL RECOVERY OPPs HALF LED TO A SHOT"])),
+    ])
 
 # ----------------------------------------------------------------------------
 # Defensive & discipline
 # ----------------------------------------------------------------------------
-st.subheader("🛡️ Defensive Actions & Discipline")
-
-def_cols = st.columns(6)
-def_cols[0].metric("Clearances", int(row["CLEARANCES"]))
-def_cols[1].metric("Interceptions", int(row["INTERCEPTIONS"]))
-def_cols[2].metric("Fouls Won", int(row["FOULS WON"]))
-def_cols[3].metric("Fouls Committed", int(row["FOULS COMMITED"]))
-def_cols[4].metric("Yellow Cards", int(row["YELLOW CARDS"]))
-def_cols[5].metric("Red Cards", int(row["RED CARDS"]))
+st.markdown('<div class="section-title">🛡️ Defensive & Discipline</div>', unsafe_allow_html=True)
+def_col1, def_col2 = st.columns(2)
+with def_col1:
+    stat_table([
+        ("Clearances", fmt(row["CLEARANCES"])),
+        ("Interceptions", fmt(row["INTERCEPTIONS"])),
+    ])
+with def_col2:
+    stat_table([
+        ("Fouls Won", fmt(row["FOULS WON"])),
+        ("Fouls Committed", fmt(row["FOULS COMMITED"])),
+        ("Yellow Cards", fmt(row["YELLOW CARDS"])),
+        ("Red Cards", fmt(row["RED CARDS"])),
+    ])
 
 # ----------------------------------------------------------------------------
-# Goalkeeper section
+# Goalkeeper
 # ----------------------------------------------------------------------------
 if is_gk:
-    st.subheader("🧤 Goalkeeper Stats")
-    gk_cols = st.columns(3)
-    gk_cols[0].metric("Saves", int(row["SAVES"]))
-    gk_cols[1].metric("Big Chances Saved", int(row["BIG CHANCES SAVED"]))
-    gk_cols[2].metric("Goals Conceded", int(row["GOALS CONCEDED"]))
-
-# ----------------------------------------------------------------------------
-# Raw stats table (expandable)
-# ----------------------------------------------------------------------------
-with st.expander("📋 View full raw stats for this player"):
-    display_row = row.drop(labels=["Playing Type", "Opponent", "Competition", "Outcome", "Round", "Game ID"], errors="ignore")
-    st.dataframe(display_row.astype(str), use_container_width=True)
+    st.markdown('<div class="section-title">🧤 Goalkeeper</div>', unsafe_allow_html=True)
+    stat_table([
+        ("Saves", fmt(row["SAVES"])),
+        ("Big Chances Saved", fmt(row["BIG CHANCES SAVED"])),
+        ("Goals Conceded", fmt(row["GOALS CONCEDED"])),
+    ])
 
 st.markdown("---")
-st.caption("MPAM FC · Player Cards Dashboard · Data from match statistics export")
+st.caption("MPAM FC · Player Cards Dashboard")

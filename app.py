@@ -1,5 +1,6 @@
 import streamlit as st
 import pandas as pd
+import base64
 
 # ----------------------------------------------------------------------------
 # Page config
@@ -23,42 +24,22 @@ st.markdown(
     <style>
     .stApp {{ background-color: {BLACK}; }}
 
-    .team-header {{
+    .center-header {{
         display: flex;
+        flex-direction: column;
         align-items: center;
-        gap: 1rem;
-        background: linear-gradient(90deg, #1a1a1a 0%, {BLACK} 100%);
-        padding: 1rem 1.5rem;
-        border-radius: 12px;
-        margin-bottom: 1.2rem;
-        border: 1px solid {ORANGE_DARK};
+        text-align: center;
+        margin-bottom: 0.6rem;
     }}
-    .badge {{
-        width: 56px;
-        height: 56px;
-        min-width: 56px;
-        border-radius: 50%;
-        background: radial-gradient(circle at 35% 30%, {ORANGE} 0%, {ORANGE_DARK} 70%);
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        font-weight: 800;
-        font-size: 1.1rem;
-        color: {BLACK};
-        border: 2px solid {ORANGE};
-        box-shadow: 0 0 12px rgba(255,122,0,0.35);
-    }}
-    .team-name {{
-        font-size: 1.7rem;
-        font-weight: 800;
-        color: {ORANGE};
-        margin: 0;
-        letter-spacing: 0.02em;
+    .center-header img {{
+        height: 90px;
+        margin-bottom: 0.4rem;
     }}
     .team-sub {{
         color: #b5b5b5;
         margin: 0;
-        font-size: 0.85rem;
+        font-size: 0.9rem;
+        letter-spacing: 0.03em;
     }}
 
     .section-title {{
@@ -103,7 +84,7 @@ st.markdown(
         text-align: center;
     }}
     .headline-value {{
-        font-size: 1.5rem;
+        font-size: 1.35rem;
         font-weight: 800;
         color: {ORANGE};
     }}
@@ -118,10 +99,27 @@ st.markdown(
         background-color: #111111;
         border-right: 1px solid {ORANGE_DARK};
     }}
+    .sidebar-logo {{
+        display: flex;
+        justify-content: center;
+        margin-bottom: 0.6rem;
+    }}
+    .sidebar-logo img {{
+        height: 60px;
+    }}
     </style>
     """,
     unsafe_allow_html=True,
 )
+
+
+@st.cache_data
+def get_logo_base64():
+    with open("mpam_logo.png", "rb") as f:
+        return base64.b64encode(f.read()).decode()
+
+
+LOGO_B64 = get_logo_base64()
 
 # ----------------------------------------------------------------------------
 # Data loading
@@ -144,25 +142,18 @@ def load_data():
 
 df = load_data()
 
-# ----------------------------------------------------------------------------
-# Header: badge + team name (placeholder badge until a real logo is provided)
-# ----------------------------------------------------------------------------
-st.markdown(
-    """
-    <div class="team-header">
-        <div class="badge">MPAM</div>
-        <div>
-            <p class="team-name">MPAM FC</p>
-            <p class="team-sub">Player Cards · Match Statistics</p>
-        </div>
-    </div>
-    """,
-    unsafe_allow_html=True,
-)
+PLAYING_TYPE_LABELS = {
+    "Βασικος": "Starter",
+    "Αλλαγη": "Substitute",
+}
 
 # ----------------------------------------------------------------------------
-# Sidebar - player filter
+# Sidebar: logo (top-left) + player filter
 # ----------------------------------------------------------------------------
+st.sidebar.markdown(
+    f'<div class="sidebar-logo"><img src="data:image/png;base64,{LOGO_B64}"></div>',
+    unsafe_allow_html=True,
+)
 st.sidebar.markdown("### 🔍 Select Player")
 player_names = sorted(df["NAME"].unique().tolist())
 selected_player = st.sidebar.selectbox("Player", player_names)
@@ -179,6 +170,19 @@ st.sidebar.caption("Open this app on your phone and bookmark it for quick access
 
 row = df[df["NAME"] == selected_player].iloc[0]
 is_gk = str(row["POSITION"]).strip().upper() == "GK"
+
+# ----------------------------------------------------------------------------
+# Center header: logo + subtitle, above player name
+# ----------------------------------------------------------------------------
+st.markdown(
+    f"""
+    <div class="center-header">
+        <img src="data:image/png;base64,{LOGO_B64}">
+        <p class="team-sub">Player Review · Match Statistics</p>
+    </div>
+    """,
+    unsafe_allow_html=True,
+)
 
 # ----------------------------------------------------------------------------
 # Helper to render a simple label/value table (no charts, no bars)
@@ -205,12 +209,15 @@ def fmt(n):
 st.markdown(f"## {row['NAME']}")
 st.markdown(f"**Position:** {row['POSITION']}")
 
+playing_type_raw = str(row["Playing Type"]).strip()
+playing_type_label = PLAYING_TYPE_LABELS.get(playing_type_raw, playing_type_raw)
+
 c1, c2, c3, c4 = st.columns(4)
 headline = [
     (c1, "Minutes", fmt(row["MINUTES"])),
     (c2, "Goals", fmt(row["GOAL"])),
     (c3, "Assists", fmt(row["ASSISTS"])),
-    (c4, "Key Passes", fmt(row["KEY PASSES"])),
+    (c4, "Playing Type", playing_type_label),
 ]
 for col, label, value in headline:
     col.markdown(
@@ -220,28 +227,28 @@ for col, label, value in headline:
     )
 
 # ----------------------------------------------------------------------------
-# Attacking
+# Shooting
 # ----------------------------------------------------------------------------
-st.markdown('<div class="section-title">🎯 Attacking</div>', unsafe_allow_html=True)
-attack_col1, attack_col2 = st.columns(2)
-with attack_col1:
-    stat_table([
-        ("Goals", fmt(row["GOAL"])),
-        ("Assists", fmt(row["ASSISTS"])),
-        ("Key Passes", fmt(row["KEY PASSES"])),
-        ("Big Chances Created", fmt(row["BIG CHANCES CREATED"])),
-        ("Big Chances Scored", fmt(row["BIG CHANCES SCORED"])),
-        ("Big Chances Missed", fmt(row["BIG CHANCES MISSED"])),
-    ])
-with attack_col2:
-    stat_table([
-        ("Inside Shots On Target", fmt(row["INSIDE ON TARGET"])),
-        ("Inside Shots Off Target", fmt(row["INSIDE OFF TARGET"])),
-        ("Inside Shots Blocked", fmt(row["INSIDE BLOCKED"])),
-        ("Outside Shots On Target", fmt(row["OUTSIDE ON TARGET"])),
-        ("Outside Shots Off Target", fmt(row["OUTSIDE OFF TARGET"])),
-        ("Outside Shots Blocked", fmt(row["OUTSIDE BLOCKED"])),
-    ])
+st.markdown('<div class="section-title">🎯 Shooting</div>', unsafe_allow_html=True)
+stat_table([
+    ("Inside Shots On Target", fmt(row["INSIDE ON TARGET"])),
+    ("Inside Shots Off Target", fmt(row["INSIDE OFF TARGET"])),
+    ("Inside Shots Blocked", fmt(row["INSIDE BLOCKED"])),
+    ("Outside Shots On Target", fmt(row["OUTSIDE ON TARGET"])),
+    ("Outside Shots Off Target", fmt(row["OUTSIDE OFF TARGET"])),
+    ("Outside Shots Blocked", fmt(row["OUTSIDE BLOCKED"])),
+])
+
+# ----------------------------------------------------------------------------
+# Creativity (chance creation)
+# ----------------------------------------------------------------------------
+st.markdown('<div class="section-title">✨ Creativity</div>', unsafe_allow_html=True)
+stat_table([
+    ("Key Passes", fmt(row["KEY PASSES"])),
+    ("Big Chances Created", fmt(row["BIG CHANCES CREATED"])),
+    ("Big Chances Scored", fmt(row["BIG CHANCES SCORED"])),
+    ("Big Chances Missed", fmt(row["BIG CHANCES MISSED"])),
+])
 
 # ----------------------------------------------------------------------------
 # Duels
@@ -306,4 +313,4 @@ if is_gk:
     ])
 
 st.markdown("---")
-st.caption("MPAM FC · Player Cards Dashboard")
+st.caption("MPAM FC · Player Review Dashboard")

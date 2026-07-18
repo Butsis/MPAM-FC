@@ -260,7 +260,20 @@ else:
     scoped_df = combined_df[combined_df["__match_id"] == selected_match_id]
 
 player_names = sorted(scoped_df["NAME"].unique().tolist())
-selected_player = st.sidebar.selectbox("Player", player_names)
+
+if "selected_player" not in st.session_state:
+    st.session_state["selected_player"] = player_names[0] if player_names else None
+
+# Keep the previously selected player highlighted if they're in this match's
+# roster too; only fall back to the first player when they aren't (e.g. they
+# didn't play in the newly selected match).
+if st.session_state["selected_player"] in player_names:
+    default_index = player_names.index(st.session_state["selected_player"])
+else:
+    default_index = 0
+
+selected_player = st.sidebar.selectbox("Player", player_names, index=default_index)
+st.session_state["selected_player"] = selected_player
 
 if selected_match_id != "ALL":
     st.sidebar.markdown(f"**Opponent:** {selected_match_meta['opponent']}")

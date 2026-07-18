@@ -41,6 +41,13 @@ st.markdown(
         font-size: 0.9rem;
         letter-spacing: 0.03em;
     }}
+    .matchup {{
+        color: {ORANGE};
+        margin: 0.3rem 0 0.1rem 0;
+        font-size: 1.15rem;
+        font-weight: 800;
+        letter-spacing: 0.02em;
+    }}
 
     .section-title {{
         color: {ORANGE};
@@ -121,13 +128,54 @@ def get_logo_base64():
 
 LOGO_B64 = get_logo_base64()
 
+# The Excel filename itself encodes the competition and the opponent, e.g.
+# "Στατιστικα Αγωνα - Playoffs - Φοινικας Τουμπας.xlsx" -> competition is
+# "Playoffs", opponent is "Φοινικας Τουμπας". Update this constant whenever
+# you swap in a new match's file.
+EXCEL_FILENAME = "Στατιστικα Αγωνα - Playoffs - Φοινικας Τουμπας.xlsx"
+TEAM_NAME = "MPAM FC"
+
+
+def parse_match_info(filename):
+    """Pull competition + opponent name out of the '<prefix> - <competition> - <opponent>.xlsx' filename."""
+    stem = filename.rsplit(".", 1)[0]
+    parts = [p.strip() for p in stem.split(" - ")]
+    if len(parts) >= 3:
+        competition = parts[1]
+        opponent = parts[2]
+    else:
+        competition, opponent = "", ""
+    return competition, opponent
+
+
+@st.cache_data
+def load_match_meta():
+    """Read Sheet1 to find whether we played at home ('Εντος') or away, and build the matchup string."""
+    sheet1 = pd.read_excel(EXCEL_FILENAME, sheet_name="Sheet1")
+    location_raw = ""
+    if "Location" in sheet1.columns and sheet1["Location"].notna().any():
+        location_raw = str(sheet1["Location"].dropna().iloc[0]).strip()
+    is_home = location_raw == "Εντος"
+
+    competition, opponent = parse_match_info(EXCEL_FILENAME)
+
+    if is_home:
+        matchup = f"{TEAM_NAME} vs {opponent}"
+    else:
+        matchup = f"{opponent} vs {TEAM_NAME}"
+
+    return matchup, competition
+
+
+MATCHUP, COMPETITION = load_match_meta()
+
 # ----------------------------------------------------------------------------
 # Data loading
 # ----------------------------------------------------------------------------
 @st.cache_data
 def load_data():
     df = pd.read_excel(
-        "Στατιστικα Αγωνα - Playoffs - Φοινικας Τουμπας.xlsx",
+        EXCEL_FILENAME,
         sheet_name="Sheet2",
     )
     # The first column header looks like "NAME" but is actually typed with
@@ -178,7 +226,8 @@ st.markdown(
     f"""
     <div class="center-header">
         <img src="data:image/png;base64,{LOGO_B64}">
-        <p class="team-sub">Player Review · Match Statistics</p>
+        <p class="matchup">{MATCHUP}</p>
+        <p class="team-sub">{COMPETITION} · Player Review</p>
     </div>
     """,
     unsafe_allow_html=True,

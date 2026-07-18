@@ -230,7 +230,7 @@ if combined_df.empty:
 
 def match_label(m):
     date_str = m["date"].strftime("%d %b %Y") if m["date"] is not None else "date n/a"
-    return f'{m["matchup"]} — {m["competition"]} ({date_str})'
+    return f'{m["matchup"]} ({date_str})'
 
 
 # ----------------------------------------------------------------------------
@@ -241,18 +241,38 @@ st.sidebar.markdown(
     unsafe_allow_html=True,
 )
 
+# ---- Match filter (searchable) ----
 st.sidebar.markdown("### 🗓️ Select Match")
-match_option_labels = [match_label(m) for m in matches] + ["All Games"]
-selected_match_label = st.sidebar.selectbox("Match", match_option_labels, index=0)
+all_match_labels = [match_label(m) for m in matches] + ["All Games"]
+match_search = st.sidebar.text_input("Search match", placeholder="Type to search matches...", label_visibility="collapsed")
+
+if match_search:
+    filtered_match_labels = [l for l in all_match_labels if match_search.lower() in l.lower()]
+    if not filtered_match_labels:
+        filtered_match_labels = all_match_labels
+else:
+    filtered_match_labels = all_match_labels
+
+if "selected_match_label" not in st.session_state:
+    st.session_state["selected_match_label"] = filtered_match_labels[0]
+
+if st.session_state["selected_match_label"] in filtered_match_labels:
+    default_match_index = filtered_match_labels.index(st.session_state["selected_match_label"])
+else:
+    default_match_index = 0
+
+selected_match_label = st.sidebar.selectbox("Match", filtered_match_labels, index=default_match_index)
+st.session_state["selected_match_label"] = selected_match_label
 
 if selected_match_label == "All Games":
     selected_match_id = "ALL"
     selected_match_meta = None
 else:
-    selected_idx = match_option_labels.index(selected_match_label)
+    selected_idx = all_match_labels.index(selected_match_label)
     selected_match_meta = matches[selected_idx]
     selected_match_id = selected_match_meta["match_id"]
 
+# ---- Player filter (searchable) ----
 st.sidebar.markdown("### 🔍 Select Player")
 if selected_match_id == "ALL":
     scoped_df = combined_df
@@ -260,19 +280,27 @@ else:
     scoped_df = combined_df[combined_df["__match_id"] == selected_match_id]
 
 player_names = sorted(scoped_df["NAME"].unique().tolist())
+player_search = st.sidebar.text_input("Search player", placeholder="Type to search players...", label_visibility="collapsed")
+
+if player_search:
+    filtered_player_names = [p for p in player_names if player_search.lower() in p.lower()]
+    if not filtered_player_names:
+        filtered_player_names = player_names
+else:
+    filtered_player_names = player_names
 
 if "selected_player" not in st.session_state:
-    st.session_state["selected_player"] = player_names[0] if player_names else None
+    st.session_state["selected_player"] = filtered_player_names[0] if filtered_player_names else None
 
 # Keep the previously selected player highlighted if they're in this match's
 # roster too; only fall back to the first player when they aren't (e.g. they
-# didn't play in the newly selected match).
-if st.session_state["selected_player"] in player_names:
-    default_index = player_names.index(st.session_state["selected_player"])
+# didn't play in the newly selected match, or the search filtered them out).
+if st.session_state["selected_player"] in filtered_player_names:
+    default_index = filtered_player_names.index(st.session_state["selected_player"])
 else:
     default_index = 0
 
-selected_player = st.sidebar.selectbox("Player", player_names, index=default_index)
+selected_player = st.sidebar.selectbox("Player", filtered_player_names, index=default_index)
 st.session_state["selected_player"] = selected_player
 
 if selected_match_id != "ALL":

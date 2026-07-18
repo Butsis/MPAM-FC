@@ -384,14 +384,21 @@ if is_all_games:
 # Shooting
 # ----------------------------------------------------------------------------
 st.markdown('<div class="section-title">🎯 Shooting</div>', unsafe_allow_html=True)
-stat_table([
-    ("Inside Shots On Target", fmt(row["INSIDE ON TARGET"])),
-    ("Inside Shots Off Target", fmt(row["INSIDE OFF TARGET"])),
-    ("Inside Shots Blocked", fmt(row["INSIDE BLOCKED"])),
-    ("Outside Shots On Target", fmt(row["OUTSIDE ON TARGET"])),
-    ("Outside Shots Off Target", fmt(row["OUTSIDE OFF TARGET"])),
-    ("Outside Shots Blocked", fmt(row["OUTSIDE BLOCKED"])),
-])
+shoot_col1, shoot_col2 = st.columns(2)
+with shoot_col1:
+    st.markdown("**Inside the Box**")
+    stat_table([
+        ("Shots On Target", fmt(row["INSIDE ON TARGET"])),
+        ("Shots Off Target", fmt(row["INSIDE OFF TARGET"])),
+        ("Shots Blocked", fmt(row["INSIDE BLOCKED"])),
+    ])
+with shoot_col2:
+    st.markdown("**Outside the Box**")
+    stat_table([
+        ("Shots On Target", fmt(row["OUTSIDE ON TARGET"])),
+        ("Shots Off Target", fmt(row["OUTSIDE OFF TARGET"])),
+        ("Shots Blocked", fmt(row["OUTSIDE BLOCKED"])),
+    ])
 
 # ----------------------------------------------------------------------------
 # Creativity (chance creation)
@@ -402,6 +409,7 @@ stat_table([
     ("Big Chances Created", fmt(row["BIG CHANCES CREATED"])),
     ("Big Chances Scored", fmt(row["BIG CHANCES SCORED"])),
     ("Big Chances Missed", fmt(row["BIG CHANCES MISSED"])),
+    ("Long Balls", f'{fmt(row["SUCCESSFUL LONG BALLS"])} / {fmt(row["TOTAL LONG BALLS"])} successful ({pct(row["SUCCESSFUL LONG BALLS"], row["TOTAL LONG BALLS"])})'),
 ])
 
 # ----------------------------------------------------------------------------
@@ -414,7 +422,6 @@ stat_table([
     ("Aerial Duels", f'{fmt(row["AERIAL DUES WON"])} / {fmt(row["TOTAL AERIAL DUELS"])} won ({pct(row["AERIAL DUES WON"], row["TOTAL AERIAL DUELS"])})'),
     ("Post-Duel Actions", f'{fmt(row["POST-DUEL ACTIONS SUCCESS"])} / {fmt(row["TOTAL POST-DUEL ACTIONS"])} success ({pct(row["POST-DUEL ACTIONS SUCCESS"], row["TOTAL POST-DUEL ACTIONS"])})'),
     ("Second Balls", f'{fmt(row["SECOND BALLS WON"])} won / {fmt(row["SECOND BALLS LOST"])} lost'),
-    ("Long Balls", f'{fmt(row["SUCCESSFUL LONG BALLS"])} / {fmt(row["TOTAL LONG BALLS"])} successful ({pct(row["SUCCESSFUL LONG BALLS"], row["TOTAL LONG BALLS"])})'),
 ])
 
 # ----------------------------------------------------------------------------
@@ -424,17 +431,17 @@ st.markdown('<div class="section-title">⚠️ Possession Lost & Recovered</div>
 poss_col1, poss_col2 = st.columns(2)
 with poss_col1:
     stat_table([
-        ("Lost — Own Half", fmt(row["POSSESION LOST OWN HALF"])),
-        ("...led to opp. shot", fmt(row["POSSESSION LOST OWN HALF LED TO A SHOT"])),
-        ("Lost — Opp. Half", fmt(row["POSSESSION LOST OPPs HALF"])),
-        ("...led to opp. shot", fmt(row["POSSESSION LOST OPPs HALF LED TO A SHOT"])),
+        ("Possession Lost — Own Half", fmt(row["POSSESION LOST OWN HALF"])),
+        ("Possession Lost — Own Half Led to Opponent Shot", fmt(row["POSSESSION LOST OWN HALF LED TO A SHOT"])),
+        ("Possession Lost — Opponent's Half", fmt(row["POSSESSION LOST OPPs HALF"])),
+        ("Possession Lost — Opponent's Half Led to Opponent Shot", fmt(row["POSSESSION LOST OPPs HALF LED TO A SHOT"])),
     ])
 with poss_col2:
     stat_table([
-        ("Recovered — Own Half", fmt(row["BALL RECOVERY OWN HALF"])),
-        ("...led to our shot", fmt(row["BALL RECOVERY OWN HALF LED TO A SHOT"])),
-        ("Recovered — Opp. Half", fmt(row["BALL RECOVERY OPPs HALF"])),
-        ("...led to our shot", fmt(row["BALL RECOVERY OPPs HALF LED TO A SHOT"])),
+        ("Ball Recovery — Own Half", fmt(row["BALL RECOVERY OWN HALF"])),
+        ("Ball Recovery — Own Half Led to Our Shot", fmt(row["BALL RECOVERY OWN HALF LED TO A SHOT"])),
+        ("Ball Recovery — Opponent's Half", fmt(row["BALL RECOVERY OPPs HALF"])),
+        ("Ball Recovery — Opponent's Half Led to Our Shot", fmt(row["BALL RECOVERY OPPs HALF LED TO A SHOT"])),
     ])
 
 # ----------------------------------------------------------------------------

@@ -253,16 +253,13 @@ if match_search:
 else:
     filtered_match_labels = all_match_labels
 
-if "selected_match_label" not in st.session_state:
+# Make sure the stored selection is valid for the current option list BEFORE
+# creating the widget, then let the widget's own key own the state from here
+# on — this is what actually persists the user's click across reruns.
+if "selected_match_label" not in st.session_state or st.session_state["selected_match_label"] not in filtered_match_labels:
     st.session_state["selected_match_label"] = filtered_match_labels[0]
 
-if st.session_state["selected_match_label"] in filtered_match_labels:
-    default_match_index = filtered_match_labels.index(st.session_state["selected_match_label"])
-else:
-    default_match_index = 0
-
-selected_match_label = st.sidebar.selectbox("Match", filtered_match_labels, index=default_match_index)
-st.session_state["selected_match_label"] = selected_match_label
+selected_match_label = st.sidebar.selectbox("Match", filtered_match_labels, key="selected_match_label")
 
 if selected_match_label == "All Games":
     selected_match_id = "ALL"
@@ -289,19 +286,15 @@ if player_search:
 else:
     filtered_player_names = player_names
 
-if "selected_player" not in st.session_state:
+# Keep the previously selected player if they're in this match's roster too;
+# only fall back to the first player when they aren't (e.g. they didn't play
+# in the newly selected match, or the search filtered them out). This check
+# runs BEFORE the widget is created — the widget's own key then owns the
+# value from here on, which is what actually makes the selection stick.
+if "selected_player" not in st.session_state or st.session_state["selected_player"] not in filtered_player_names:
     st.session_state["selected_player"] = filtered_player_names[0] if filtered_player_names else None
 
-# Keep the previously selected player highlighted if they're in this match's
-# roster too; only fall back to the first player when they aren't (e.g. they
-# didn't play in the newly selected match, or the search filtered them out).
-if st.session_state["selected_player"] in filtered_player_names:
-    default_index = filtered_player_names.index(st.session_state["selected_player"])
-else:
-    default_index = 0
-
-selected_player = st.sidebar.selectbox("Player", filtered_player_names, index=default_index)
-st.session_state["selected_player"] = selected_player
+selected_player = st.sidebar.selectbox("Player", filtered_player_names, key="selected_player")
 
 if selected_match_id != "ALL":
     st.sidebar.markdown(f"**Opponent:** {selected_match_meta['opponent']}")
@@ -328,6 +321,19 @@ if is_all_games:
     matches_played = player_history["__match_id"].nunique()
 else:
     player_row_df = scoped_df[scoped_df["NAME"] == selected_player]
+    if player_row_df.empty:
+        st.markdown(
+            f"""
+            <div class="center-header">
+                <img src="data:image/png;base64,{LOGO_B64}">
+                <p class="matchup">{selected_match_meta['matchup']}</p>
+                <p class="team-sub">{selected_match_meta['competition']} · Player Review</p>
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
+        st.info(f"{selected_player} didn't feature in this match. Pick another match, or select **All Games**.")
+        st.stop()
     row = player_row_df.iloc[0]
     matches_played = 1
 

@@ -137,6 +137,28 @@ PLAYING_TYPE_LABELS = {
     "Αλλαγη": "Substitute",
 }
 
+POSITION_LABELS = {
+    "GK": "Goalkeeper",
+    "CB": "Center Back",
+    "LB": "Left Back",
+    "RB": "Right Back",
+    "DM": "Defensive Midfielder",
+    "CM": "Central Midfielder",
+    "AM": "Attacking Midfielder",
+    "LW": "Left Winger",
+    "RW": "Right Winger",
+    "W": "Winger",
+    "CF": "Center Forward",
+    "ST": "Striker",
+}
+
+
+def format_position(pos_raw):
+    """Expand position abbreviations to full names; handles combos like 'CM/RB'."""
+    parts = [p.strip() for p in str(pos_raw).split("/")]
+    return " / ".join(POSITION_LABELS.get(p, p) for p in parts)
+
+
 # Columns that describe a player-row (not a stat to add up across matches)
 NON_STAT_COLS = [
     "NAME", "POSITION", "Playing Type", "Opponent", "Competition",
@@ -383,7 +405,7 @@ def fmt(n):
 # Player header + headline boxes
 # ----------------------------------------------------------------------------
 st.markdown(f"## {selected_player}")
-st.markdown(f"**Position:** {row['POSITION']}")
+st.markdown(f"**Position:** {format_position(row['POSITION'])}")
 
 c1, c2, c3, c4 = st.columns(4)
 if is_all_games:
@@ -432,11 +454,13 @@ if is_gk:
     # Goalkeeper (shown first, replaces Shooting, for GKs only)
     # ------------------------------------------------------------------------
     st.markdown('<div class="section-title">🧤 Goalkeeper</div>', unsafe_allow_html=True)
+    total_saves = row["SAVES INSIDE THE BOX"] + row["SAVES OUTSIDE THE BOX"]
     gk_rows = [
+        ("Goals Conceded", fmt(row["GOALS CONCEDED"])),
+        ("Total Saves", fmt(total_saves)),
         ("Saves — Inside the Box", fmt(row["SAVES INSIDE THE BOX"])),
         ("Saves — Outside the Box", fmt(row["SAVES OUTSIDE THE BOX"])),
         ("Big Chances Saved", fmt(row["BIG CHANCES SAVED"])),
-        ("Goals Conceded", fmt(row["GOALS CONCEDED"])),
     ]
     if row["PENALTY SAVED"] > 0:
         gk_rows.append(("Penalty Saved", fmt(row["PENALTY SAVED"])))
@@ -473,30 +497,20 @@ else:
     stat_table(big_chance_rows)
 
 # ----------------------------------------------------------------------------
-# Duels
-# ----------------------------------------------------------------------------
-st.markdown('<div class="section-title">🥊 Duels</div>', unsafe_allow_html=True)
-stat_table([
-    ("Offensive Duels", f'{fmt(row["OFFENSIVE DUELS WON"])} / {fmt(row["TOTAL OFFENSIVE DUELS"])} won ({pct(row["OFFENSIVE DUELS WON"], row["TOTAL OFFENSIVE DUELS"])})'),
-    ("Defensive Duels", f'{fmt(row["DEFENSIVE DUELS WON"])} / {fmt(row["TOTAL DEFENSIVE DUELS"])} won ({pct(row["DEFENSIVE DUELS WON"], row["TOTAL DEFENSIVE DUELS"])})'),
-    ("Aerial Duels", f'{fmt(row["AERIAL DUES WON"])} / {fmt(row["TOTAL AERIAL DUELS"])} won ({pct(row["AERIAL DUES WON"], row["TOTAL AERIAL DUELS"])})'),
-])
-
-# ----------------------------------------------------------------------------
 # Passing
 # ----------------------------------------------------------------------------
 st.markdown('<div class="section-title">🔄 Passing</div>', unsafe_allow_html=True)
 total_passes = row["PASSES OWN HALF"] + row["PASSES OPPS HALF"]
+total_accurate_passes = row["ACCURATE PASSES"]
 pass_col1, pass_col2 = st.columns(2)
 with pass_col1:
     stat_table([
-        ("Total Passes", fmt(total_passes)),
+        ("Total Passes", f'{fmt(total_accurate_passes)} / {fmt(total_passes)} accurate ({pct(total_accurate_passes, total_passes)})'),
         ("Passes — Own Half", fmt(row["PASSES OWN HALF"])),
         ("Passes — Opponent's Half", fmt(row["PASSES OPPS HALF"])),
     ])
 with pass_col2:
     stat_table([
-        ("Total Accurate Passes", fmt(row["ACCURATE PASSES"])),
         ("Accurate Passes — Opponent's Half", fmt(row["OPPS HALF ACCURATE PASSES"])),
         ("Progressive Passes", f'{fmt(row["ACCURATE PROGRESSIVE PASSES"])} / {fmt(row["PROGRESSIVE PASSES"])} accurate ({pct(row["ACCURATE PROGRESSIVE PASSES"], row["PROGRESSIVE PASSES"])})'),
         ("Crosses", f'{fmt(row["ACCURATE CROSSES"])} / {fmt(row["CROSSES"])} accurate ({pct(row["ACCURATE CROSSES"], row["CROSSES"])})'),
@@ -516,9 +530,12 @@ stat_table([
 # Possession
 # ----------------------------------------------------------------------------
 st.markdown('<div class="section-title">⚠️ Possession Lost & Recovered</div>', unsafe_allow_html=True)
+total_possession_lost = row["POSSESION LOST OWN HALF"] + row["POSSESSION LOST OPPs HALF"]
+total_ball_recovery = row["BALL RECOVERY OWN HALF"] + row["BALL RECOVERY OPPs HALF"]
 poss_col1, poss_col2 = st.columns(2)
 with poss_col1:
     stat_table([
+        ("Total Possession Lost", fmt(total_possession_lost)),
         ("Possession Lost — Own Half", fmt(row["POSSESION LOST OWN HALF"])),
         ("Possession Lost — Own Half Led to Opponent Shot", fmt(row["POSSESSION LOST OWN HALF LED TO A SHOT"])),
         ("Possession Lost — Opponent's Half", fmt(row["POSSESSION LOST OPPs HALF"])),
@@ -526,6 +543,7 @@ with poss_col1:
     ])
 with poss_col2:
     stat_table([
+        ("Total Ball Recovery", fmt(total_ball_recovery)),
         ("Ball Recovery — Own Half", fmt(row["BALL RECOVERY OWN HALF"])),
         ("Ball Recovery — Own Half Led to Our Shot", fmt(row["BALL RECOVERY OWN HALF LED TO A SHOT"])),
         ("Ball Recovery — Opponent's Half", fmt(row["BALL RECOVERY OPPs HALF"])),
@@ -555,6 +573,16 @@ with def_col2:
     if row["PENALTY COMMITTED"] > 0:
         discipline_rows.append(("Penalty Committed", fmt(row["PENALTY COMMITTED"])))
     stat_table(discipline_rows)
+
+# ----------------------------------------------------------------------------
+# Duels (shown last)
+# ----------------------------------------------------------------------------
+st.markdown('<div class="section-title">🥊 Duels</div>', unsafe_allow_html=True)
+stat_table([
+    ("Offensive Duels", f'{fmt(row["OFFENSIVE DUELS WON"])} / {fmt(row["TOTAL OFFENSIVE DUELS"])} won ({pct(row["OFFENSIVE DUELS WON"], row["TOTAL OFFENSIVE DUELS"])})'),
+    ("Defensive Duels", f'{fmt(row["DEFENSIVE DUELS WON"])} / {fmt(row["TOTAL DEFENSIVE DUELS"])} won ({pct(row["DEFENSIVE DUELS WON"], row["TOTAL DEFENSIVE DUELS"])})'),
+    ("Aerial Duels", f'{fmt(row["AERIAL DUES WON"])} / {fmt(row["TOTAL AERIAL DUELS"])} won ({pct(row["AERIAL DUES WON"], row["TOTAL AERIAL DUELS"])})'),
+])
 
 st.markdown("---")
 st.caption("MPAM FC · Player Review Dashboard")

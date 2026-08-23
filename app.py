@@ -428,6 +428,24 @@ if is_all_games:
     st.dataframe(breakdown, hide_index=True, use_container_width=True)
 
 # ----------------------------------------------------------------------------
+# Passing
+# ----------------------------------------------------------------------------
+st.markdown('<div class="section-title">🔄 Passing</div>', unsafe_allow_html=True)
+pass_col1, pass_col2 = st.columns(2)
+with pass_col1:
+    stat_table([
+        ("Passes — Own Half", fmt(row["PASSES OWN HALF"])),
+        ("Passes — Opponent's Half", fmt(row["PASSES OPPS HALF"])),
+        ("Accurate Passes", fmt(row["ACCURATE PASSES"])),
+        ("Accurate Passes — Opponent's Half", fmt(row["OPPS HALF ACCURATE PASSES"])),
+    ])
+with pass_col2:
+    stat_table([
+        ("Progressive Passes", f'{fmt(row["ACCURATE PROGRESSIVE PASSES"])} / {fmt(row["PROGRESSIVE PASSES"])} accurate ({pct(row["ACCURATE PROGRESSIVE PASSES"], row["PROGRESSIVE PASSES"])})'),
+        ("Crosses", f'{fmt(row["ACCURATE CROSSES"])} / {fmt(row["CROSSES"])} accurate ({pct(row["ACCURATE CROSSES"], row["CROSSES"])})'),
+    ])
+
+# ----------------------------------------------------------------------------
 # Shooting
 # ----------------------------------------------------------------------------
 st.markdown('<div class="section-title">🎯 Shooting</div>', unsafe_allow_html=True)
@@ -467,8 +485,6 @@ stat_table([
     ("Offensive Duels", f'{fmt(row["OFFENSIVE DUELS WON"])} / {fmt(row["TOTAL OFFENSIVE DUELS"])} won ({pct(row["OFFENSIVE DUELS WON"], row["TOTAL OFFENSIVE DUELS"])})'),
     ("Defensive Duels", f'{fmt(row["DEFENSIVE DUELS WON"])} / {fmt(row["TOTAL DEFENSIVE DUELS"])} won ({pct(row["DEFENSIVE DUELS WON"], row["TOTAL DEFENSIVE DUELS"])})'),
     ("Aerial Duels", f'{fmt(row["AERIAL DUES WON"])} / {fmt(row["TOTAL AERIAL DUELS"])} won ({pct(row["AERIAL DUES WON"], row["TOTAL AERIAL DUELS"])})'),
-    ("Post-Duel Actions", f'{fmt(row["POST-DUEL ACTIONS SUCCESS"])} / {fmt(row["TOTAL POST-DUEL ACTIONS"])} success ({pct(row["POST-DUEL ACTIONS SUCCESS"], row["TOTAL POST-DUEL ACTIONS"])})'),
-    ("Second Balls", f'{fmt(row["SECOND BALLS WON"])} won / {fmt(row["SECOND BALLS LOST"])} lost'),
 ])
 
 # ----------------------------------------------------------------------------
@@ -498,16 +514,29 @@ st.markdown('<div class="section-title">🛡️ Defensive & Discipline</div>', u
 def_col1, def_col2 = st.columns(2)
 with def_col1:
     stat_table([
+        ("Tackles", f'{fmt(row["TACKLES WON"])} won / {fmt(row["TACKLES LOST"])} lost'),
         ("Clearances", fmt(row["CLEARANCES"])),
         ("Interceptions", fmt(row["INTERCEPTIONS"])),
     ])
 with def_col2:
     stat_table([
         ("Fouls Won", fmt(row["FOULS WON"])),
-        ("Fouls Committed", fmt(row["FOULS COMMITED"])),
+        ("Fouls Committed", fmt(row["FOULS COMMITTED"])),
         ("Yellow Cards", fmt(row["YELLOW CARDS"])),
         ("Red Cards", fmt(row["RED CARDS"])),
     ])
+
+# ----------------------------------------------------------------------------
+# Penalties
+# ----------------------------------------------------------------------------
+st.markdown('<div class="section-title">⚽ Penalties</div>', unsafe_allow_html=True)
+stat_table([
+    ("Won", fmt(row["PENALTY WON"])),
+    ("Committed", fmt(row["PENALTY COMMITTED"])),
+    ("Scored", fmt(row["PENALTY SCORED"])),
+    ("Missed", fmt(row["PENALTY MISSED"])),
+    ("Saved", fmt(row["PENALTY SAVED"])),
+])
 
 # ----------------------------------------------------------------------------
 # Goalkeeper
@@ -515,7 +544,8 @@ with def_col2:
 if is_gk:
     st.markdown('<div class="section-title">🧤 Goalkeeper</div>', unsafe_allow_html=True)
     stat_table([
-        ("Saves", fmt(row["SAVES"])),
+        ("Saves — Inside the Box", fmt(row["SAVES INSIDE THE BOX"])),
+        ("Saves — Outside the Box", fmt(row["SAVES OUTSIDE THE BOX"])),
         ("Big Chances Saved", fmt(row["BIG CHANCES SAVED"])),
         ("Goals Conceded", fmt(row["GOALS CONCEDED"])),
     ])

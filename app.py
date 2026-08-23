@@ -427,55 +427,50 @@ if is_all_games:
     })
     st.dataframe(breakdown, hide_index=True, use_container_width=True)
 
-# ----------------------------------------------------------------------------
-# Passing
-# ----------------------------------------------------------------------------
-st.markdown('<div class="section-title">🔄 Passing</div>', unsafe_allow_html=True)
-pass_col1, pass_col2 = st.columns(2)
-with pass_col1:
-    stat_table([
-        ("Passes — Own Half", fmt(row["PASSES OWN HALF"])),
-        ("Passes — Opponent's Half", fmt(row["PASSES OPPS HALF"])),
-        ("Accurate Passes", fmt(row["ACCURATE PASSES"])),
-        ("Accurate Passes — Opponent's Half", fmt(row["OPPS HALF ACCURATE PASSES"])),
-    ])
-with pass_col2:
-    stat_table([
-        ("Progressive Passes", f'{fmt(row["ACCURATE PROGRESSIVE PASSES"])} / {fmt(row["PROGRESSIVE PASSES"])} accurate ({pct(row["ACCURATE PROGRESSIVE PASSES"], row["PROGRESSIVE PASSES"])})'),
-        ("Crosses", f'{fmt(row["ACCURATE CROSSES"])} / {fmt(row["CROSSES"])} accurate ({pct(row["ACCURATE CROSSES"], row["CROSSES"])})'),
-    ])
-
-# ----------------------------------------------------------------------------
-# Shooting
-# ----------------------------------------------------------------------------
-st.markdown('<div class="section-title">🎯 Shooting</div>', unsafe_allow_html=True)
-shoot_col1, shoot_col2 = st.columns(2)
-with shoot_col1:
-    st.markdown("**Inside the Box**")
-    stat_table([
-        ("Shots On Target", fmt(row["INSIDE ON TARGET"])),
-        ("Shots Off Target", fmt(row["INSIDE OFF TARGET"])),
-        ("Shots Blocked", fmt(row["INSIDE BLOCKED"])),
-    ])
-with shoot_col2:
-    st.markdown("**Outside the Box**")
-    stat_table([
-        ("Shots On Target", fmt(row["OUTSIDE ON TARGET"])),
-        ("Shots Off Target", fmt(row["OUTSIDE OFF TARGET"])),
-        ("Shots Blocked", fmt(row["OUTSIDE BLOCKED"])),
-    ])
-
-# ----------------------------------------------------------------------------
-# Creativity (chance creation)
-# ----------------------------------------------------------------------------
-st.markdown('<div class="section-title">✨ Creativity</div>', unsafe_allow_html=True)
-stat_table([
-    ("Key Passes", fmt(row["KEY PASSES"])),
-    ("Big Chances Created", fmt(row["BIG CHANCES CREATED"])),
-    ("Big Chances Scored", fmt(row["BIG CHANCES SCORED"])),
-    ("Big Chances Missed", fmt(row["BIG CHANCES MISSED"])),
-    ("Long Balls", f'{fmt(row["SUCCESSFUL LONG BALLS"])} / {fmt(row["TOTAL LONG BALLS"])} successful ({pct(row["SUCCESSFUL LONG BALLS"], row["TOTAL LONG BALLS"])})'),
-])
+if is_gk:
+    # ------------------------------------------------------------------------
+    # Goalkeeper (shown first, replaces Shooting, for GKs only)
+    # ------------------------------------------------------------------------
+    st.markdown('<div class="section-title">🧤 Goalkeeper</div>', unsafe_allow_html=True)
+    gk_rows = [
+        ("Saves — Inside the Box", fmt(row["SAVES INSIDE THE BOX"])),
+        ("Saves — Outside the Box", fmt(row["SAVES OUTSIDE THE BOX"])),
+        ("Big Chances Saved", fmt(row["BIG CHANCES SAVED"])),
+        ("Goals Conceded", fmt(row["GOALS CONCEDED"])),
+    ]
+    if row["PENALTY SAVED"] > 0:
+        gk_rows.append(("Penalty Saved", fmt(row["PENALTY SAVED"])))
+    stat_table(gk_rows)
+else:
+    # ------------------------------------------------------------------------
+    # Shooting
+    # ------------------------------------------------------------------------
+    st.markdown('<div class="section-title">🎯 Shooting</div>', unsafe_allow_html=True)
+    shoot_col1, shoot_col2 = st.columns(2)
+    with shoot_col1:
+        st.markdown("**Inside the Box**")
+        stat_table([
+            ("Shots On Target", fmt(row["INSIDE ON TARGET"])),
+            ("Shots Off Target", fmt(row["INSIDE OFF TARGET"])),
+            ("Shots Blocked", fmt(row["INSIDE BLOCKED"])),
+        ])
+    with shoot_col2:
+        st.markdown("**Outside the Box**")
+        stat_table([
+            ("Shots On Target", fmt(row["OUTSIDE ON TARGET"])),
+            ("Shots Off Target", fmt(row["OUTSIDE OFF TARGET"])),
+            ("Shots Blocked", fmt(row["OUTSIDE BLOCKED"])),
+        ])
+    st.markdown("**Big Chances**")
+    big_chance_rows = [
+        ("Big Chances Scored", fmt(row["BIG CHANCES SCORED"])),
+        ("Big Chances Missed", fmt(row["BIG CHANCES MISSED"])),
+    ]
+    if row["PENALTY SCORED"] > 0:
+        big_chance_rows.append(("Penalty Scored", fmt(row["PENALTY SCORED"])))
+    if row["PENALTY MISSED"] > 0:
+        big_chance_rows.append(("Penalty Missed", fmt(row["PENALTY MISSED"])))
+    stat_table(big_chance_rows)
 
 # ----------------------------------------------------------------------------
 # Duels
@@ -485,6 +480,36 @@ stat_table([
     ("Offensive Duels", f'{fmt(row["OFFENSIVE DUELS WON"])} / {fmt(row["TOTAL OFFENSIVE DUELS"])} won ({pct(row["OFFENSIVE DUELS WON"], row["TOTAL OFFENSIVE DUELS"])})'),
     ("Defensive Duels", f'{fmt(row["DEFENSIVE DUELS WON"])} / {fmt(row["TOTAL DEFENSIVE DUELS"])} won ({pct(row["DEFENSIVE DUELS WON"], row["TOTAL DEFENSIVE DUELS"])})'),
     ("Aerial Duels", f'{fmt(row["AERIAL DUES WON"])} / {fmt(row["TOTAL AERIAL DUELS"])} won ({pct(row["AERIAL DUES WON"], row["TOTAL AERIAL DUELS"])})'),
+])
+
+# ----------------------------------------------------------------------------
+# Passing
+# ----------------------------------------------------------------------------
+st.markdown('<div class="section-title">🔄 Passing</div>', unsafe_allow_html=True)
+total_passes = row["PASSES OWN HALF"] + row["PASSES OPPS HALF"]
+pass_col1, pass_col2 = st.columns(2)
+with pass_col1:
+    stat_table([
+        ("Total Passes", fmt(total_passes)),
+        ("Passes — Own Half", fmt(row["PASSES OWN HALF"])),
+        ("Passes — Opponent's Half", fmt(row["PASSES OPPS HALF"])),
+    ])
+with pass_col2:
+    stat_table([
+        ("Total Accurate Passes", fmt(row["ACCURATE PASSES"])),
+        ("Accurate Passes — Opponent's Half", fmt(row["OPPS HALF ACCURATE PASSES"])),
+        ("Progressive Passes", f'{fmt(row["ACCURATE PROGRESSIVE PASSES"])} / {fmt(row["PROGRESSIVE PASSES"])} accurate ({pct(row["ACCURATE PROGRESSIVE PASSES"], row["PROGRESSIVE PASSES"])})'),
+        ("Crosses", f'{fmt(row["ACCURATE CROSSES"])} / {fmt(row["CROSSES"])} accurate ({pct(row["ACCURATE CROSSES"], row["CROSSES"])})'),
+    ])
+
+# ----------------------------------------------------------------------------
+# Creativity (chance creation)
+# ----------------------------------------------------------------------------
+st.markdown('<div class="section-title">✨ Creativity</div>', unsafe_allow_html=True)
+stat_table([
+    ("Key Passes", fmt(row["KEY PASSES"])),
+    ("Big Chances Created", fmt(row["BIG CHANCES CREATED"])),
+    ("Long Balls", f'{fmt(row["SUCCESSFUL LONG BALLS"])} / {fmt(row["TOTAL LONG BALLS"])} successful ({pct(row["SUCCESSFUL LONG BALLS"], row["TOTAL LONG BALLS"])})'),
 ])
 
 # ----------------------------------------------------------------------------
@@ -519,36 +544,17 @@ with def_col1:
         ("Interceptions", fmt(row["INTERCEPTIONS"])),
     ])
 with def_col2:
-    stat_table([
+    discipline_rows = [
         ("Fouls Won", fmt(row["FOULS WON"])),
         ("Fouls Committed", fmt(row["FOULS COMMITTED"])),
         ("Yellow Cards", fmt(row["YELLOW CARDS"])),
         ("Red Cards", fmt(row["RED CARDS"])),
-    ])
-
-# ----------------------------------------------------------------------------
-# Penalties
-# ----------------------------------------------------------------------------
-st.markdown('<div class="section-title">⚽ Penalties</div>', unsafe_allow_html=True)
-stat_table([
-    ("Won", fmt(row["PENALTY WON"])),
-    ("Committed", fmt(row["PENALTY COMMITTED"])),
-    ("Scored", fmt(row["PENALTY SCORED"])),
-    ("Missed", fmt(row["PENALTY MISSED"])),
-    ("Saved", fmt(row["PENALTY SAVED"])),
-])
-
-# ----------------------------------------------------------------------------
-# Goalkeeper
-# ----------------------------------------------------------------------------
-if is_gk:
-    st.markdown('<div class="section-title">🧤 Goalkeeper</div>', unsafe_allow_html=True)
-    stat_table([
-        ("Saves — Inside the Box", fmt(row["SAVES INSIDE THE BOX"])),
-        ("Saves — Outside the Box", fmt(row["SAVES OUTSIDE THE BOX"])),
-        ("Big Chances Saved", fmt(row["BIG CHANCES SAVED"])),
-        ("Goals Conceded", fmt(row["GOALS CONCEDED"])),
-    ])
+    ]
+    if row["PENALTY WON"] > 0:
+        discipline_rows.append(("Penalty Won", fmt(row["PENALTY WON"])))
+    if row["PENALTY COMMITTED"] > 0:
+        discipline_rows.append(("Penalty Committed", fmt(row["PENALTY COMMITTED"])))
+    stat_table(discipline_rows)
 
 st.markdown("---")
 st.caption("MPAM FC · Player Review Dashboard")

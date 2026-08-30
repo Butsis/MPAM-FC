@@ -660,6 +660,16 @@ else:
             st.stop()
         trow = trow_df.iloc[0]
 
+    # Sheet2-based team aggregation (sum of every player's stats) — used for
+    # Shooting, Passing, and Tackles so those sections match the player-card
+    # format and source exactly.
+    if is_all_games_team:
+        player_subset = combined_df
+    else:
+        player_subset = combined_df[combined_df["__match_id"] == selected_match_id]
+    p2_stat_cols = [c for c in player_subset.columns if c not in NON_STAT_COLS]
+    p2row = player_subset[p2_stat_cols].sum()
+
     # ----------------------------------------------------------------------------
     # Center header: logo + matchup / season info
     # ----------------------------------------------------------------------------
@@ -725,27 +735,34 @@ else:
         st.dataframe(team_breakdown, hide_index=True, use_container_width=True)
 
     # ----------------------------------------------------------------------------
-    # Shooting
+    # Shooting (from Sheet2, summed across all players — same format as player cards)
     # ----------------------------------------------------------------------------
     st.markdown('<div class="section-title">🎯 Shooting</div>', unsafe_allow_html=True)
     shoot_col1, shoot_col2 = st.columns(2)
     with shoot_col1:
+        st.markdown("**Inside the Box**")
         stat_table([
-            ("Total Shots", fmt(trow["Total Shots"])),
-            ("On Target", fmt(trow["On Target"])),
-            ("Off Target", fmt(trow["Off Target"])),
-            ("Blocked", fmt(trow["Blocked"])),
+            ("Shots On Target", fmt(p2row["INSIDE ON TARGET"])),
+            ("Shots Off Target", fmt(p2row["INSIDE OFF TARGET"])),
+            ("Shots Blocked", fmt(p2row["INSIDE BLOCKED"])),
         ])
     with shoot_col2:
+        st.markdown("**Outside the Box**")
         stat_table([
-            ("Shots Inside Box", fmt(trow["Shots Inside Box"])),
-            ("Shots Outside Box", fmt(trow["Shots Outside Box"])),
+            ("Shots On Target", fmt(p2row["OUTSIDE ON TARGET"])),
+            ("Shots Off Target", fmt(p2row["OUTSIDE OFF TARGET"])),
+            ("Shots Blocked", fmt(p2row["OUTSIDE BLOCKED"])),
         ])
     st.markdown("**Big Chances**")
-    stat_table([
-        ("Big Chances Scored", fmt(trow["Scored"])),
-        ("Big Chances Missed", fmt(trow["Missed"])),
-    ])
+    team_big_chance_rows = [
+        ("Big Chances Scored", fmt(p2row["BIG CHANCES SCORED"])),
+        ("Big Chances Missed", fmt(p2row["BIG CHANCES MISSED"])),
+    ]
+    if p2row["PENALTY SCORED"] > 0:
+        team_big_chance_rows.append(("Penalty Scored", fmt(p2row["PENALTY SCORED"])))
+    if p2row["PENALTY MISSED"] > 0:
+        team_big_chance_rows.append(("Penalty Missed", fmt(p2row["PENALTY MISSED"])))
+    stat_table(team_big_chance_rows)
 
     # ----------------------------------------------------------------------------
     # Duels
@@ -758,12 +775,25 @@ else:
     ])
 
     # ----------------------------------------------------------------------------
-    # Passing
+    # Passing (from Sheet2, summed across all players — same format as player cards)
     # ----------------------------------------------------------------------------
     st.markdown('<div class="section-title">🔄 Passing</div>', unsafe_allow_html=True)
-    stat_table([
-        ("Long Balls", f'{fmt(trow["Successful Long Balls"])} / {fmt(trow["Total Long Balls"])} successful ({pct(trow["Successful Long Balls"], trow["Total Long Balls"])})'),
-    ])
+    team_total_passes = p2row["PASSES OWN HALF"] + p2row["PASSES OPPS HALF"]
+    team_total_accurate_passes = p2row["ACCURATE PASSES"]
+    team_own_half_accurate_passes = team_total_accurate_passes - p2row["OPPS HALF ACCURATE PASSES"]
+    pass_col1, pass_col2 = st.columns(2)
+    with pass_col1:
+        stat_table([
+            ("Total Passes", f'{fmt(team_total_accurate_passes)} / {fmt(team_total_passes)} accurate ({pct(team_total_accurate_passes, team_total_passes)})'),
+            ("Passes — Own Half", f'{fmt(team_own_half_accurate_passes)} / {fmt(p2row["PASSES OWN HALF"])} accurate ({pct(team_own_half_accurate_passes, p2row["PASSES OWN HALF"])})'),
+            ("Passes — Opponent's Half", f'{fmt(p2row["OPPS HALF ACCURATE PASSES"])} / {fmt(p2row["PASSES OPPS HALF"])} accurate ({pct(p2row["OPPS HALF ACCURATE PASSES"], p2row["PASSES OPPS HALF"])})'),
+        ])
+    with pass_col2:
+        stat_table([
+            ("Progressive Passes", f'{fmt(p2row["ACCURATE PROGRESSIVE PASSES"])} / {fmt(p2row["PROGRESSIVE PASSES"])} accurate ({pct(p2row["ACCURATE PROGRESSIVE PASSES"], p2row["PROGRESSIVE PASSES"])})'),
+            ("Crosses", f'{fmt(p2row["ACCURATE CROSSES"])} / {fmt(p2row["CROSSES"])} accurate ({pct(p2row["ACCURATE CROSSES"], p2row["CROSSES"])})'),
+            ("Long Balls", f'{fmt(p2row["SUCCESSFUL LONG BALLS"])} / {fmt(p2row["TOTAL LONG BALLS"])} successful ({pct(p2row["SUCCESSFUL LONG BALLS"], p2row["TOTAL LONG BALLS"])})'),
+        ])
 
     # ----------------------------------------------------------------------------
     # Creativity
@@ -815,6 +845,7 @@ else:
     def_col1, def_col2 = st.columns(2)
     with def_col1:
         stat_table([
+            ("Tackles", f'{fmt(p2row["TACKLES WON"])} won / {fmt(p2row["TACKLES LOST"])} lost'),
             ("Fouls Won", fmt(trow["Fouls Won"])),
             ("Fouls Committed", fmt(trow["Fouls Commited"])),
         ])
@@ -825,9 +856,10 @@ else:
         ])
 
     # ----------------------------------------------------------------------------
-    # Set Pieces (corners + fouls sequences — team-only, no player equivalent)
+    # Set Pieces (corners + long-ball free-kick chances — team-only, no player equivalent)
     # ----------------------------------------------------------------------------
     st.markdown('<div class="section-title">🚩 Set Pieces</div>', unsafe_allow_html=True)
+    st.caption("Free kicks here are long-ball delivery chances near the box, treated like corners — not the team's total fouls for the match (see Defensive & Discipline for that).")
     sp_col1, sp_col2 = st.columns(2)
     with sp_col1:
         st.markdown("**For**")
@@ -835,9 +867,9 @@ else:
             ("Corners", fmt(trow["Corners"])),
             ("Corners → Attempt", fmt(trow["Corners led to an attempt"])),
             ("Corners → Goal", fmt(trow["Corners led to goal"])),
-            ("Fouls For", fmt(trow["Fouls for"])),
-            ("Fouls For → Attempt", fmt(trow["Fouls led to an attempt"])),
-            ("Fouls For → Goal", fmt(trow["Fouls led to goal"])),
+            ("Long-Ball Free Kicks", fmt(trow["Fouls for"])),
+            ("Free Kicks → Attempt", fmt(trow["Fouls led to an attempt"])),
+            ("Free Kicks → Goal", fmt(trow["Fouls led to goal"])),
         ])
     with sp_col2:
         st.markdown("**Against**")
@@ -845,9 +877,9 @@ else:
             ("Corners", fmt(trow["Opps Corners"])),
             ("Corners → Attempt", fmt(trow["Opps Corners led to an attempt"])),
             ("Corners → Goal", fmt(trow["Opps Corners led to goal"])),
-            ("Fouls Against", fmt(trow["Fouls Against"])),
-            ("Fouls Against → Attempt", fmt(trow["Opps Fouls led to an attempt"])),
-            ("Fouls Against → Goal", fmt(trow["Opps Fouls led to goal"])),
+            ("Long-Ball Free Kicks", fmt(trow["Fouls Against"])),
+            ("Free Kicks → Attempt", fmt(trow["Opps Fouls led to an attempt"])),
+            ("Free Kicks → Goal", fmt(trow["Opps Fouls led to goal"])),
         ])
 
     st.markdown("---")

@@ -165,6 +165,21 @@ NON_STAT_COLS = [
     "Outcome", "Round", "Game ID", "__match_id", "__matchup", "__date",
 ]
 
+# Sheet1 columns that describe a match (not a team stat to add up across matches)
+TEAM_NON_STAT_COLS = [
+    "Opponent", "Competition", "Outcome", "Location", "Surface", "Round",
+    "Game ID", "Date", "__match_id", "__matchup", "__date",
+    # Pre-computed percentage columns — never summed; we recompute % from
+    # summed won/total ourselves so it stays mathematically correct.
+    "Offensive Duels %", "Defensive Duels %", "Aerial Duels %", "Long Balls %",
+]
+
+OUTCOME_LABELS = {
+    "Νικη": "Win",
+    "Ισοπαλια": "Draw",
+    "Ηττα": "Loss",
+}
+
 # ----------------------------------------------------------------------------
 # Discover every match workbook sitting next to this app, and load them all
 # ----------------------------------------------------------------------------
@@ -182,6 +197,7 @@ def _files_fingerprint():
 def load_all_matches(fingerprint):
     match_files = [f for f, _ in fingerprint]
     player_frames = []
+    team_rows = []
     match_meta = []
     skipped = []
 
@@ -235,15 +251,27 @@ def load_all_matches(fingerprint):
             "date": date_val,
         })
 
+        # Team-level row, straight from Sheet1 (one row per match)
+        team_text_cols = ["Opponent", "Competition", "Outcome", "Location", "Surface"]
+        team_row = sheet1.iloc[0].copy()
+        for col in sheet1.columns:
+            if col not in team_text_cols and col != "Date":
+                team_row[col] = pd.to_numeric(pd.Series([team_row[col]]), errors="coerce").fillna(0).iloc[0]
+        team_row["__match_id"] = game_id
+        team_row["__matchup"] = matchup
+        team_row["__date"] = date_val
+        team_rows.append(team_row)
+
     if not player_frames:
-        return pd.DataFrame(), [], skipped
+        return pd.DataFrame(), pd.DataFrame(), [], skipped
 
     combined = pd.concat(player_frames, ignore_index=True)
+    team_df = pd.DataFrame(team_rows).reset_index(drop=True)
     match_meta.sort(key=lambda m: m["date"] if m["date"] is not None else pd.Timestamp.min, reverse=True)
-    return combined, match_meta, skipped
+    return combined, team_df, match_meta, skipped
 
 
-combined_df, matches, skipped_files = load_all_matches(_files_fingerprint())
+combined_df, team_df, matches, skipped_files = load_all_matches(_files_fingerprint())
 
 if combined_df.empty:
     st.error("No match files found. Add at least one .xlsx match export to this app's folder.")
@@ -256,12 +284,16 @@ def match_label(m):
 
 
 # ----------------------------------------------------------------------------
-# Sidebar: logo (top-left), match filter, player filter
+# Sidebar: logo (top-left), view toggle, match filter, player filter
 # ----------------------------------------------------------------------------
 st.sidebar.markdown(
     f'<div class="sidebar-logo"><img src="data:image/png;base64,{LOGO_B64}"></div>',
     unsafe_allow_html=True,
 )
+
+# ---- View toggle ----
+st.sidebar.markdown("### 📊 View")
+view_mode = st.sidebar.radio("View", ["Player Stats", "Team Stats"], label_visibility="collapsed", key="view_mode")
 
 # ---- Match filter (searchable) ----
 st.sidebar.markdown("### 🗓️ Select Match")
@@ -291,32 +323,33 @@ else:
     selected_match_meta = matches[selected_idx]
     selected_match_id = selected_match_meta["match_id"]
 
-# ---- Player filter (searchable) ----
-st.sidebar.markdown("### 🔍 Select Player")
-if selected_match_id == "ALL":
-    scoped_df = combined_df
-else:
-    scoped_df = combined_df[combined_df["__match_id"] == selected_match_id]
+# ---- Player filter (searchable) — Player Stats view only ----
+if view_mode == "Player Stats":
+    st.sidebar.markdown("### 🔍 Select Player")
+    if selected_match_id == "ALL":
+        scoped_df = combined_df
+    else:
+        scoped_df = combined_df[combined_df["__match_id"] == selected_match_id]
 
-player_names = sorted(scoped_df["NAME"].unique().tolist())
-player_search = st.sidebar.text_input("Search player", placeholder="Type to search players...", label_visibility="collapsed")
+    player_names = sorted(scoped_df["NAME"].unique().tolist())
+    player_search = st.sidebar.text_input("Search player", placeholder="Type to search players...", label_visibility="collapsed")
 
-if player_search:
-    filtered_player_names = [p for p in player_names if player_search.lower() in p.lower()]
-    if not filtered_player_names:
+    if player_search:
+        filtered_player_names = [p for p in player_names if player_search.lower() in p.lower()]
+        if not filtered_player_names:
+            filtered_player_names = player_names
+    else:
         filtered_player_names = player_names
-else:
-    filtered_player_names = player_names
 
-# Keep the previously selected player if they're in this match's roster too;
-# only fall back to the first player when they aren't (e.g. they didn't play
-# in the newly selected match, or the search filtered them out). This check
-# runs BEFORE the widget is created — the widget's own key then owns the
-# value from here on, which is what actually makes the selection stick.
-if "selected_player" not in st.session_state or st.session_state["selected_player"] not in filtered_player_names:
-    st.session_state["selected_player"] = filtered_player_names[0] if filtered_player_names else None
+    # Keep the previously selected player if they're in this match's roster too;
+    # only fall back to the first player when they aren't (e.g. they didn't play
+    # in the newly selected match, or the search filtered them out). This check
+    # runs BEFORE the widget is created — the widget's own key then owns the
+    # value from here on, which is what actually makes the selection stick.
+    if "selected_player" not in st.session_state or st.session_state["selected_player"] not in filtered_player_names:
+        st.session_state["selected_player"] = filtered_player_names[0] if filtered_player_names else None
 
-selected_player = st.sidebar.selectbox("Player", filtered_player_names, key="selected_player")
+    selected_player = st.sidebar.selectbox("Player", filtered_player_names, key="selected_player")
 
 if selected_match_id != "ALL":
     st.sidebar.markdown(f"**Opponent:** {selected_match_meta['opponent']}")
@@ -328,59 +361,6 @@ if skipped_files:
 
 st.sidebar.markdown("---")
 st.sidebar.caption("Open this app on your phone and bookmark it for quick access after every match.")
-
-# ----------------------------------------------------------------------------
-# Build the row of stats to display: single match, or season aggregate
-# ----------------------------------------------------------------------------
-is_all_games = selected_match_id == "ALL"
-
-if is_all_games:
-    player_history = combined_df[combined_df["NAME"] == selected_player].sort_values("__date", ascending=False)
-    stat_cols = [c for c in player_history.columns if c not in NON_STAT_COLS]
-    row = player_history[stat_cols].sum()
-    position_mode = player_history["POSITION"].mode()
-    row["POSITION"] = position_mode.iat[0] if not position_mode.empty else player_history["POSITION"].iloc[0]
-    matches_played = player_history["__match_id"].nunique()
-else:
-    player_row_df = scoped_df[scoped_df["NAME"] == selected_player]
-    if player_row_df.empty:
-        st.markdown(
-            f"""
-            <div class="center-header">
-                <img src="data:image/png;base64,{LOGO_B64}">
-                <p class="matchup">{selected_match_meta['matchup']}</p>
-                <p class="team-sub">{selected_match_meta['competition']} · Player Review</p>
-            </div>
-            """,
-            unsafe_allow_html=True,
-        )
-        st.info(f"{selected_player} didn't feature in this match. Pick another match, or select **All Games**.")
-        st.stop()
-    row = player_row_df.iloc[0]
-    matches_played = 1
-
-is_gk = str(row["POSITION"]).strip().upper() == "GK"
-
-# ----------------------------------------------------------------------------
-# Center header: logo + matchup / season info, above player name
-# ----------------------------------------------------------------------------
-if is_all_games:
-    line1 = "All Games"
-    line2 = f"{len(matches)} Matches · Season Review"
-else:
-    line1 = selected_match_meta["matchup"]
-    line2 = f'{selected_match_meta["competition"]} · Player Review'
-
-st.markdown(
-    f"""
-    <div class="center-header">
-        <img src="data:image/png;base64,{LOGO_B64}">
-        <p class="matchup">{line1}</p>
-        <p class="team-sub">{line2}</p>
-    </div>
-    """,
-    unsafe_allow_html=True,
-)
 
 # ----------------------------------------------------------------------------
 # Helpers
@@ -401,204 +381,474 @@ def pct(won, total):
 def fmt(n):
     return f"{int(n)}" if float(n).is_integer() else f"{n}"
 
-# ----------------------------------------------------------------------------
-# Player header + headline boxes
-# ----------------------------------------------------------------------------
-st.markdown(f"## {selected_player}")
-st.markdown(f"**Position:** {format_position(row['POSITION'])}")
 
-c1, c2, c3, c4 = st.columns(4)
-if is_all_games:
-    headline = [
-        (c1, "Matches Played", fmt(matches_played)),
-        (c2, "Minutes", fmt(row["MINUTES"])),
-        (c3, "Goals", fmt(row["GOAL"])),
-        (c4, "Assists", fmt(row["ASSISTS"])),
-    ]
-else:
-    playing_type_raw = str(row["Playing Type"]).strip()
-    playing_type_label = PLAYING_TYPE_LABELS.get(playing_type_raw, playing_type_raw)
-    headline = [
-        (c1, "Minutes", fmt(row["MINUTES"])),
-        (c2, "Goals", fmt(row["GOAL"])),
-        (c3, "Assists", fmt(row["ASSISTS"])),
-        (c4, "Playing Type", playing_type_label),
-    ]
+if view_mode == "Player Stats":
+    # ----------------------------------------------------------------------------
+    # Build the row of stats to display: single match, or season aggregate
+    # ----------------------------------------------------------------------------
+    is_all_games = selected_match_id == "ALL"
 
-for col, label, value in headline:
-    col.markdown(
-        f'<div class="headline-card"><div class="headline-value">{value}</div>'
-        f'<div class="headline-label">{label}</div></div>',
+    if is_all_games:
+        player_history = combined_df[combined_df["NAME"] == selected_player].sort_values("__date", ascending=False)
+        stat_cols = [c for c in player_history.columns if c not in NON_STAT_COLS]
+        row = player_history[stat_cols].sum()
+        position_mode = player_history["POSITION"].mode()
+        row["POSITION"] = position_mode.iat[0] if not position_mode.empty else player_history["POSITION"].iloc[0]
+        matches_played = player_history["__match_id"].nunique()
+    else:
+        player_row_df = scoped_df[scoped_df["NAME"] == selected_player]
+        if player_row_df.empty:
+            st.markdown(
+                f"""
+                <div class="center-header">
+                    <img src="data:image/png;base64,{LOGO_B64}">
+                    <p class="matchup">{selected_match_meta['matchup']}</p>
+                    <p class="team-sub">{selected_match_meta['competition']} · Player Review</p>
+                </div>
+                """,
+                unsafe_allow_html=True,
+            )
+            st.info(f"{selected_player} didn't feature in this match. Pick another match, or select **All Games**.")
+            st.stop()
+        row = player_row_df.iloc[0]
+        matches_played = 1
+
+    is_gk = str(row["POSITION"]).strip().upper() == "GK"
+
+    # ----------------------------------------------------------------------------
+    # Center header: logo + matchup / season info, above player name
+    # ----------------------------------------------------------------------------
+    if is_all_games:
+        line1 = "All Games"
+        line2 = f"{len(matches)} Matches · Season Review"
+    else:
+        line1 = selected_match_meta["matchup"]
+        line2 = f'{selected_match_meta["competition"]} · Player Review'
+
+    st.markdown(
+        f"""
+        <div class="center-header">
+            <img src="data:image/png;base64,{LOGO_B64}">
+            <p class="matchup">{line1}</p>
+            <p class="team-sub">{line2}</p>
+        </div>
+        """,
         unsafe_allow_html=True,
     )
 
-# ----------------------------------------------------------------------------
-# Match-by-match breakdown (All Games mode only) — see every game at once
-# ----------------------------------------------------------------------------
-if is_all_games:
-    st.markdown('<div class="section-title">📅 Match-by-Match</div>', unsafe_allow_html=True)
-    breakdown = pd.DataFrame({
-        "Date": player_history["__date"].dt.strftime("%d %b %Y"),
-        "Match": player_history["__matchup"],
-        "Competition": player_history["Competition"],
-        "Result": player_history["Outcome"],
-        "Started": player_history["Playing Type"].map(PLAYING_TYPE_LABELS).fillna(player_history["Playing Type"]),
-        "Minutes": player_history["MINUTES"].astype(int),
-        "Goals": player_history["GOAL"].astype(int),
-        "Assists": player_history["ASSISTS"].astype(int),
-    })
-    st.dataframe(breakdown, hide_index=True, use_container_width=True)
 
-def render_duels():
-    st.markdown('<div class="section-title">🥊 Duels</div>', unsafe_allow_html=True)
+    # ----------------------------------------------------------------------------
+    # Player header + headline boxes
+    # ----------------------------------------------------------------------------
+    st.markdown(f"## {selected_player}")
+    st.markdown(f"**Position:** {format_position(row['POSITION'])}")
+
+    c1, c2, c3, c4 = st.columns(4)
+    if is_all_games:
+        headline = [
+            (c1, "Matches Played", fmt(matches_played)),
+            (c2, "Minutes", fmt(row["MINUTES"])),
+            (c3, "Goals", fmt(row["GOAL"])),
+            (c4, "Assists", fmt(row["ASSISTS"])),
+        ]
+    else:
+        playing_type_raw = str(row["Playing Type"]).strip()
+        playing_type_label = PLAYING_TYPE_LABELS.get(playing_type_raw, playing_type_raw)
+        headline = [
+            (c1, "Minutes", fmt(row["MINUTES"])),
+            (c2, "Goals", fmt(row["GOAL"])),
+            (c3, "Assists", fmt(row["ASSISTS"])),
+            (c4, "Playing Type", playing_type_label),
+        ]
+
+    for col, label, value in headline:
+        col.markdown(
+            f'<div class="headline-card"><div class="headline-value">{value}</div>'
+            f'<div class="headline-label">{label}</div></div>',
+            unsafe_allow_html=True,
+        )
+
+    # ----------------------------------------------------------------------------
+    # Match-by-match breakdown (All Games mode only) — see every game at once
+    # ----------------------------------------------------------------------------
+    if is_all_games:
+        st.markdown('<div class="section-title">📅 Match-by-Match</div>', unsafe_allow_html=True)
+        breakdown = pd.DataFrame({
+            "Date": player_history["__date"].dt.strftime("%d %b %Y"),
+            "Match": player_history["__matchup"],
+            "Competition": player_history["Competition"],
+            "Result": player_history["Outcome"],
+            "Started": player_history["Playing Type"].map(PLAYING_TYPE_LABELS).fillna(player_history["Playing Type"]),
+            "Minutes": player_history["MINUTES"].astype(int),
+            "Goals": player_history["GOAL"].astype(int),
+            "Assists": player_history["ASSISTS"].astype(int),
+        })
+        st.dataframe(breakdown, hide_index=True, use_container_width=True)
+
+    def render_duels():
+        st.markdown('<div class="section-title">🥊 Duels</div>', unsafe_allow_html=True)
+        stat_table([
+            ("Offensive Duels", f'{fmt(row["OFFENSIVE DUELS WON"])} / {fmt(row["TOTAL OFFENSIVE DUELS"])} won ({pct(row["OFFENSIVE DUELS WON"], row["TOTAL OFFENSIVE DUELS"])})'),
+            ("Defensive Duels", f'{fmt(row["DEFENSIVE DUELS WON"])} / {fmt(row["TOTAL DEFENSIVE DUELS"])} won ({pct(row["DEFENSIVE DUELS WON"], row["TOTAL DEFENSIVE DUELS"])})'),
+            ("Aerial Duels", f'{fmt(row["AERIAL DUES WON"])} / {fmt(row["TOTAL AERIAL DUELS"])} won ({pct(row["AERIAL DUES WON"], row["TOTAL AERIAL DUELS"])})'),
+        ])
+
+
+    if is_gk:
+        # ------------------------------------------------------------------------
+        # Goalkeeper (shown first, replaces Shooting, for GKs only)
+        # ------------------------------------------------------------------------
+        st.markdown('<div class="section-title">🧤 Goalkeeper</div>', unsafe_allow_html=True)
+        total_saves = row["SAVES INSIDE THE BOX"] + row["SAVES OUTSIDE THE BOX"]
+        gk_rows = [
+            ("Goals Conceded", fmt(row["GOALS CONCEDED"])),
+            ("Total Saves", fmt(total_saves)),
+            ("Saves — Inside the Box", fmt(row["SAVES INSIDE THE BOX"])),
+            ("Saves — Outside the Box", fmt(row["SAVES OUTSIDE THE BOX"])),
+            ("Big Chances Saved", fmt(row["BIG CHANCES SAVED"])),
+        ]
+        if row["PENALTY SAVED"] > 0:
+            gk_rows.append(("Penalty Saved", fmt(row["PENALTY SAVED"])))
+        stat_table(gk_rows)
+    else:
+        # ------------------------------------------------------------------------
+        # Shooting
+        # ------------------------------------------------------------------------
+        st.markdown('<div class="section-title">🎯 Shooting</div>', unsafe_allow_html=True)
+        shoot_col1, shoot_col2 = st.columns(2)
+        with shoot_col1:
+            st.markdown("**Inside the Box**")
+            stat_table([
+                ("Shots On Target", fmt(row["INSIDE ON TARGET"])),
+                ("Shots Off Target", fmt(row["INSIDE OFF TARGET"])),
+                ("Shots Blocked", fmt(row["INSIDE BLOCKED"])),
+            ])
+        with shoot_col2:
+            st.markdown("**Outside the Box**")
+            stat_table([
+                ("Shots On Target", fmt(row["OUTSIDE ON TARGET"])),
+                ("Shots Off Target", fmt(row["OUTSIDE OFF TARGET"])),
+                ("Shots Blocked", fmt(row["OUTSIDE BLOCKED"])),
+            ])
+        st.markdown("**Big Chances**")
+        big_chance_rows = [
+            ("Big Chances Scored", fmt(row["BIG CHANCES SCORED"])),
+            ("Big Chances Missed", fmt(row["BIG CHANCES MISSED"])),
+        ]
+        if row["PENALTY SCORED"] > 0:
+            big_chance_rows.append(("Penalty Scored", fmt(row["PENALTY SCORED"])))
+        if row["PENALTY MISSED"] > 0:
+            big_chance_rows.append(("Penalty Missed", fmt(row["PENALTY MISSED"])))
+        stat_table(big_chance_rows)
+
+        # Duels sits right after Shooting for outfield players
+        render_duels()
+
+    # ----------------------------------------------------------------------------
+    # Passing
+    # ----------------------------------------------------------------------------
+    st.markdown('<div class="section-title">🔄 Passing</div>', unsafe_allow_html=True)
+    total_passes = row["PASSES OWN HALF"] + row["PASSES OPPS HALF"]
+    total_accurate_passes = row["ACCURATE PASSES"]
+    own_half_accurate_passes = total_accurate_passes - row["OPPS HALF ACCURATE PASSES"]
+    pass_col1, pass_col2 = st.columns(2)
+    with pass_col1:
+        stat_table([
+            ("Total Passes", f'{fmt(total_accurate_passes)} / {fmt(total_passes)} accurate ({pct(total_accurate_passes, total_passes)})'),
+            ("Passes — Own Half", f'{fmt(own_half_accurate_passes)} / {fmt(row["PASSES OWN HALF"])} accurate ({pct(own_half_accurate_passes, row["PASSES OWN HALF"])})'),
+            ("Passes — Opponent's Half", f'{fmt(row["OPPS HALF ACCURATE PASSES"])} / {fmt(row["PASSES OPPS HALF"])} accurate ({pct(row["OPPS HALF ACCURATE PASSES"], row["PASSES OPPS HALF"])})'),
+        ])
+    with pass_col2:
+        stat_table([
+            ("Progressive Passes", f'{fmt(row["ACCURATE PROGRESSIVE PASSES"])} / {fmt(row["PROGRESSIVE PASSES"])} accurate ({pct(row["ACCURATE PROGRESSIVE PASSES"], row["PROGRESSIVE PASSES"])})'),
+            ("Crosses", f'{fmt(row["ACCURATE CROSSES"])} / {fmt(row["CROSSES"])} accurate ({pct(row["ACCURATE CROSSES"], row["CROSSES"])})'),
+            ("Long Balls", f'{fmt(row["SUCCESSFUL LONG BALLS"])} / {fmt(row["TOTAL LONG BALLS"])} successful ({pct(row["SUCCESSFUL LONG BALLS"], row["TOTAL LONG BALLS"])})'),
+        ])
+
+    # ----------------------------------------------------------------------------
+    # Creativity (chance creation)
+    # ----------------------------------------------------------------------------
+    st.markdown('<div class="section-title">✨ Creativity</div>', unsafe_allow_html=True)
     stat_table([
-        ("Offensive Duels", f'{fmt(row["OFFENSIVE DUELS WON"])} / {fmt(row["TOTAL OFFENSIVE DUELS"])} won ({pct(row["OFFENSIVE DUELS WON"], row["TOTAL OFFENSIVE DUELS"])})'),
-        ("Defensive Duels", f'{fmt(row["DEFENSIVE DUELS WON"])} / {fmt(row["TOTAL DEFENSIVE DUELS"])} won ({pct(row["DEFENSIVE DUELS WON"], row["TOTAL DEFENSIVE DUELS"])})'),
-        ("Aerial Duels", f'{fmt(row["AERIAL DUES WON"])} / {fmt(row["TOTAL AERIAL DUELS"])} won ({pct(row["AERIAL DUES WON"], row["TOTAL AERIAL DUELS"])})'),
+        ("Key Passes", fmt(row["KEY PASSES"])),
+        ("Big Chances Created", fmt(row["BIG CHANCES CREATED"])),
     ])
 
+    # ----------------------------------------------------------------------------
+    # Possession
+    # ----------------------------------------------------------------------------
+    st.markdown('<div class="section-title">⚠️ Possession Lost & Recovered</div>', unsafe_allow_html=True)
+    total_possession_lost = (
+        row["POSSESION LOST OWN HALF"]
+        + row["POSSESSION LOST OWN HALF LED TO A SHOT"]
+        + row["POSSESSION LOST OPPs HALF"]
+        + row["POSSESSION LOST OPPs HALF LED TO A SHOT"]
+    )
+    total_ball_recovery = (
+        row["BALL RECOVERY OWN HALF"]
+        + row["BALL RECOVERY OWN HALF LED TO A SHOT"]
+        + row["BALL RECOVERY OPPs HALF"]
+        + row["BALL RECOVERY OPPs HALF LED TO A SHOT"]
+    )
+    poss_col1, poss_col2 = st.columns(2)
+    with poss_col1:
+        stat_table([
+            ("Total Possession Lost", fmt(total_possession_lost)),
+            ("Possession Lost — Own Half", fmt(row["POSSESION LOST OWN HALF"])),
+            ("Possession Lost — Own Half Led to Opponent Shot", fmt(row["POSSESSION LOST OWN HALF LED TO A SHOT"])),
+            ("Possession Lost — Opponent's Half", fmt(row["POSSESSION LOST OPPs HALF"])),
+            ("Possession Lost — Opponent's Half Led to Opponent Shot", fmt(row["POSSESSION LOST OPPs HALF LED TO A SHOT"])),
+        ])
+    with poss_col2:
+        stat_table([
+            ("Total Ball Recovery", fmt(total_ball_recovery)),
+            ("Ball Recovery — Own Half", fmt(row["BALL RECOVERY OWN HALF"])),
+            ("Ball Recovery — Own Half Led to Our Shot", fmt(row["BALL RECOVERY OWN HALF LED TO A SHOT"])),
+            ("Ball Recovery — Opponent's Half", fmt(row["BALL RECOVERY OPPs HALF"])),
+            ("Ball Recovery — Opponent's Half Led to Our Shot", fmt(row["BALL RECOVERY OPPs HALF LED TO A SHOT"])),
+        ])
 
-if is_gk:
-    # ------------------------------------------------------------------------
-    # Goalkeeper (shown first, replaces Shooting, for GKs only)
-    # ------------------------------------------------------------------------
-    st.markdown('<div class="section-title">🧤 Goalkeeper</div>', unsafe_allow_html=True)
-    total_saves = row["SAVES INSIDE THE BOX"] + row["SAVES OUTSIDE THE BOX"]
-    gk_rows = [
-        ("Goals Conceded", fmt(row["GOALS CONCEDED"])),
-        ("Total Saves", fmt(total_saves)),
-        ("Saves — Inside the Box", fmt(row["SAVES INSIDE THE BOX"])),
-        ("Saves — Outside the Box", fmt(row["SAVES OUTSIDE THE BOX"])),
-        ("Big Chances Saved", fmt(row["BIG CHANCES SAVED"])),
-    ]
-    if row["PENALTY SAVED"] > 0:
-        gk_rows.append(("Penalty Saved", fmt(row["PENALTY SAVED"])))
-    stat_table(gk_rows)
+    # ----------------------------------------------------------------------------
+    # Defensive & discipline
+    # ----------------------------------------------------------------------------
+    st.markdown('<div class="section-title">🛡️ Defensive & Discipline</div>', unsafe_allow_html=True)
+    def_col1, def_col2 = st.columns(2)
+    with def_col1:
+        stat_table([
+            ("Tackles", f'{fmt(row["TACKLES WON"])} won / {fmt(row["TACKLES LOST"])} lost'),
+            ("Clearances", fmt(row["CLEARANCES"])),
+            ("Interceptions", fmt(row["INTERCEPTIONS"])),
+        ])
+    with def_col2:
+        discipline_rows = [
+            ("Fouls Won", fmt(row["FOULS WON"])),
+            ("Fouls Committed", fmt(row["FOULS COMMITTED"])),
+            ("Yellow Cards", fmt(row["YELLOW CARDS"])),
+            ("Red Cards", fmt(row["RED CARDS"])),
+        ]
+        if row["PENALTY WON"] > 0:
+            discipline_rows.append(("Penalty Won", fmt(row["PENALTY WON"])))
+        if row["PENALTY COMMITTED"] > 0:
+            discipline_rows.append(("Penalty Committed", fmt(row["PENALTY COMMITTED"])))
+        stat_table(discipline_rows)
+
+    # Duels sits last, only for goalkeepers
+    if is_gk:
+        render_duels()
+
+    st.markdown("---")
+    st.caption("MPAM FC · Player Review Dashboard")
 else:
-    # ------------------------------------------------------------------------
+    # ============================================================================
+    # TEAM STATS DASHBOARD
+    # ============================================================================
+    is_all_games_team = selected_match_id == "ALL"
+
+    if is_all_games_team:
+        team_history = team_df.sort_values("__date", ascending=False)
+        team_stat_cols = [c for c in team_history.columns if c not in TEAM_NON_STAT_COLS]
+        trow = team_history[team_stat_cols].sum()
+        matches_played_team = team_history["__match_id"].nunique()
+        wins = int((team_history["Outcome"] == "Νικη").sum())
+        draws = int((team_history["Outcome"] == "Ισοπαλια").sum())
+        losses = int((team_history["Outcome"] == "Ηττα").sum())
+        record = f"{wins}W-{draws}D-{losses}L"
+    else:
+        trow_df = team_df[team_df["__match_id"] == selected_match_id]
+        if trow_df.empty:
+            st.info("No team data found for this match.")
+            st.stop()
+        trow = trow_df.iloc[0]
+
+    # ----------------------------------------------------------------------------
+    # Center header: logo + matchup / season info
+    # ----------------------------------------------------------------------------
+    if is_all_games_team:
+        line1 = "All Games"
+        line2 = f"{len(matches)} Matches · Team Review"
+    else:
+        line1 = selected_match_meta["matchup"]
+        line2 = f'{selected_match_meta["competition"]} · Team Review'
+
+    st.markdown(
+        f"""
+        <div class="center-header">
+            <img src="data:image/png;base64,{LOGO_B64}">
+            <p class="matchup">{line1}</p>
+            <p class="team-sub">{line2}</p>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+    st.markdown(f"## {TEAM_NAME}")
+
+    c1, c2, c3, c4 = st.columns(4)
+    if is_all_games_team:
+        headline = [
+            (c1, "Matches Played", fmt(matches_played_team)),
+            (c2, "Record", record),
+            (c3, "Goals Scored", fmt(trow["Goals Scored"])),
+            (c4, "Goals Conceded", fmt(trow["Goals Conceded"])),
+        ]
+    else:
+        outcome_raw = str(trow["Outcome"]).strip()
+        outcome_label = OUTCOME_LABELS.get(outcome_raw, outcome_raw)
+        headline = [
+            (c1, "Result", outcome_label),
+            (c2, "Goals Scored", fmt(trow["Goals Scored"])),
+            (c3, "Goals Conceded", fmt(trow["Goals Conceded"])),
+            (c4, "Total Shots", fmt(trow["Total Shots"])),
+        ]
+
+    for col, label, value in headline:
+        col.markdown(
+            f'<div class="headline-card"><div class="headline-value">{value}</div>'
+            f'<div class="headline-label">{label}</div></div>',
+            unsafe_allow_html=True,
+        )
+
+    # ----------------------------------------------------------------------------
+    # Match-by-match breakdown (All Games mode only)
+    # ----------------------------------------------------------------------------
+    if is_all_games_team:
+        st.markdown('<div class="section-title">📅 Match-by-Match</div>', unsafe_allow_html=True)
+        team_breakdown = pd.DataFrame({
+            "Date": team_history["__date"].dt.strftime("%d %b %Y"),
+            "Match": team_history["__matchup"],
+            "Competition": team_history["Competition"],
+            "Result": team_history["Outcome"].map(OUTCOME_LABELS).fillna(team_history["Outcome"]),
+            "GF": team_history["Goals Scored"].astype(int),
+            "GA": team_history["Goals Conceded"].astype(int),
+            "Shots": team_history["Total Shots"].astype(int),
+        })
+        st.dataframe(team_breakdown, hide_index=True, use_container_width=True)
+
+    # ----------------------------------------------------------------------------
     # Shooting
-    # ------------------------------------------------------------------------
+    # ----------------------------------------------------------------------------
     st.markdown('<div class="section-title">🎯 Shooting</div>', unsafe_allow_html=True)
     shoot_col1, shoot_col2 = st.columns(2)
     with shoot_col1:
-        st.markdown("**Inside the Box**")
         stat_table([
-            ("Shots On Target", fmt(row["INSIDE ON TARGET"])),
-            ("Shots Off Target", fmt(row["INSIDE OFF TARGET"])),
-            ("Shots Blocked", fmt(row["INSIDE BLOCKED"])),
+            ("Total Shots", fmt(trow["Total Shots"])),
+            ("On Target", fmt(trow["On Target"])),
+            ("Off Target", fmt(trow["Off Target"])),
+            ("Blocked", fmt(trow["Blocked"])),
         ])
     with shoot_col2:
-        st.markdown("**Outside the Box**")
         stat_table([
-            ("Shots On Target", fmt(row["OUTSIDE ON TARGET"])),
-            ("Shots Off Target", fmt(row["OUTSIDE OFF TARGET"])),
-            ("Shots Blocked", fmt(row["OUTSIDE BLOCKED"])),
+            ("Shots Inside Box", fmt(trow["Shots Inside Box"])),
+            ("Shots Outside Box", fmt(trow["Shots Outside Box"])),
         ])
     st.markdown("**Big Chances**")
-    big_chance_rows = [
-        ("Big Chances Scored", fmt(row["BIG CHANCES SCORED"])),
-        ("Big Chances Missed", fmt(row["BIG CHANCES MISSED"])),
-    ]
-    if row["PENALTY SCORED"] > 0:
-        big_chance_rows.append(("Penalty Scored", fmt(row["PENALTY SCORED"])))
-    if row["PENALTY MISSED"] > 0:
-        big_chance_rows.append(("Penalty Missed", fmt(row["PENALTY MISSED"])))
-    stat_table(big_chance_rows)
-
-    # Duels sits right after Shooting for outfield players
-    render_duels()
-
-# ----------------------------------------------------------------------------
-# Passing
-# ----------------------------------------------------------------------------
-st.markdown('<div class="section-title">🔄 Passing</div>', unsafe_allow_html=True)
-total_passes = row["PASSES OWN HALF"] + row["PASSES OPPS HALF"]
-total_accurate_passes = row["ACCURATE PASSES"]
-own_half_accurate_passes = total_accurate_passes - row["OPPS HALF ACCURATE PASSES"]
-pass_col1, pass_col2 = st.columns(2)
-with pass_col1:
     stat_table([
-        ("Total Passes", f'{fmt(total_accurate_passes)} / {fmt(total_passes)} accurate ({pct(total_accurate_passes, total_passes)})'),
-        ("Passes — Own Half", f'{fmt(own_half_accurate_passes)} / {fmt(row["PASSES OWN HALF"])} accurate ({pct(own_half_accurate_passes, row["PASSES OWN HALF"])})'),
-        ("Passes — Opponent's Half", f'{fmt(row["OPPS HALF ACCURATE PASSES"])} / {fmt(row["PASSES OPPS HALF"])} accurate ({pct(row["OPPS HALF ACCURATE PASSES"], row["PASSES OPPS HALF"])})'),
-    ])
-with pass_col2:
-    stat_table([
-        ("Progressive Passes", f'{fmt(row["ACCURATE PROGRESSIVE PASSES"])} / {fmt(row["PROGRESSIVE PASSES"])} accurate ({pct(row["ACCURATE PROGRESSIVE PASSES"], row["PROGRESSIVE PASSES"])})'),
-        ("Crosses", f'{fmt(row["ACCURATE CROSSES"])} / {fmt(row["CROSSES"])} accurate ({pct(row["ACCURATE CROSSES"], row["CROSSES"])})'),
-        ("Long Balls", f'{fmt(row["SUCCESSFUL LONG BALLS"])} / {fmt(row["TOTAL LONG BALLS"])} successful ({pct(row["SUCCESSFUL LONG BALLS"], row["TOTAL LONG BALLS"])})'),
+        ("Big Chances Scored", fmt(trow["Scored"])),
+        ("Big Chances Missed", fmt(trow["Missed"])),
     ])
 
-# ----------------------------------------------------------------------------
-# Creativity (chance creation)
-# ----------------------------------------------------------------------------
-st.markdown('<div class="section-title">✨ Creativity</div>', unsafe_allow_html=True)
-stat_table([
-    ("Key Passes", fmt(row["KEY PASSES"])),
-    ("Big Chances Created", fmt(row["BIG CHANCES CREATED"])),
-])
-
-# ----------------------------------------------------------------------------
-# Possession
-# ----------------------------------------------------------------------------
-st.markdown('<div class="section-title">⚠️ Possession Lost & Recovered</div>', unsafe_allow_html=True)
-total_possession_lost = (
-    row["POSSESION LOST OWN HALF"]
-    + row["POSSESSION LOST OWN HALF LED TO A SHOT"]
-    + row["POSSESSION LOST OPPs HALF"]
-    + row["POSSESSION LOST OPPs HALF LED TO A SHOT"]
-)
-total_ball_recovery = (
-    row["BALL RECOVERY OWN HALF"]
-    + row["BALL RECOVERY OWN HALF LED TO A SHOT"]
-    + row["BALL RECOVERY OPPs HALF"]
-    + row["BALL RECOVERY OPPs HALF LED TO A SHOT"]
-)
-poss_col1, poss_col2 = st.columns(2)
-with poss_col1:
+    # ----------------------------------------------------------------------------
+    # Duels
+    # ----------------------------------------------------------------------------
+    st.markdown('<div class="section-title">🥊 Duels</div>', unsafe_allow_html=True)
     stat_table([
-        ("Total Possession Lost", fmt(total_possession_lost)),
-        ("Possession Lost — Own Half", fmt(row["POSSESION LOST OWN HALF"])),
-        ("Possession Lost — Own Half Led to Opponent Shot", fmt(row["POSSESSION LOST OWN HALF LED TO A SHOT"])),
-        ("Possession Lost — Opponent's Half", fmt(row["POSSESSION LOST OPPs HALF"])),
-        ("Possession Lost — Opponent's Half Led to Opponent Shot", fmt(row["POSSESSION LOST OPPs HALF LED TO A SHOT"])),
-    ])
-with poss_col2:
-    stat_table([
-        ("Total Ball Recovery", fmt(total_ball_recovery)),
-        ("Ball Recovery — Own Half", fmt(row["BALL RECOVERY OWN HALF"])),
-        ("Ball Recovery — Own Half Led to Our Shot", fmt(row["BALL RECOVERY OWN HALF LED TO A SHOT"])),
-        ("Ball Recovery — Opponent's Half", fmt(row["BALL RECOVERY OPPs HALF"])),
-        ("Ball Recovery — Opponent's Half Led to Our Shot", fmt(row["BALL RECOVERY OPPs HALF LED TO A SHOT"])),
+        ("Offensive Duels", f'{fmt(trow["Offensive Duels Won"])} / {fmt(trow["Total Offensive Duels"])} won ({pct(trow["Offensive Duels Won"], trow["Total Offensive Duels"])})'),
+        ("Defensive Duels", f'{fmt(trow["Defensive Duels Won"])} / {fmt(trow["Total Defensive Duels"])} won ({pct(trow["Defensive Duels Won"], trow["Total Defensive Duels"])})'),
+        ("Aerial Duels", f'{fmt(trow["Aerial Duels Won"])} / {fmt(trow["Total Aerial Duels"])} won ({pct(trow["Aerial Duels Won"], trow["Total Aerial Duels"])})'),
     ])
 
-# ----------------------------------------------------------------------------
-# Defensive & discipline
-# ----------------------------------------------------------------------------
-st.markdown('<div class="section-title">🛡️ Defensive & Discipline</div>', unsafe_allow_html=True)
-def_col1, def_col2 = st.columns(2)
-with def_col1:
+    # ----------------------------------------------------------------------------
+    # Passing
+    # ----------------------------------------------------------------------------
+    st.markdown('<div class="section-title">🔄 Passing</div>', unsafe_allow_html=True)
     stat_table([
-        ("Tackles", f'{fmt(row["TACKLES WON"])} won / {fmt(row["TACKLES LOST"])} lost'),
-        ("Clearances", fmt(row["CLEARANCES"])),
-        ("Interceptions", fmt(row["INTERCEPTIONS"])),
+        ("Long Balls", f'{fmt(trow["Successful Long Balls"])} / {fmt(trow["Total Long Balls"])} successful ({pct(trow["Successful Long Balls"], trow["Total Long Balls"])})'),
     ])
-with def_col2:
-    discipline_rows = [
-        ("Fouls Won", fmt(row["FOULS WON"])),
-        ("Fouls Committed", fmt(row["FOULS COMMITTED"])),
-        ("Yellow Cards", fmt(row["YELLOW CARDS"])),
-        ("Red Cards", fmt(row["RED CARDS"])),
-    ]
-    if row["PENALTY WON"] > 0:
-        discipline_rows.append(("Penalty Won", fmt(row["PENALTY WON"])))
-    if row["PENALTY COMMITTED"] > 0:
-        discipline_rows.append(("Penalty Committed", fmt(row["PENALTY COMMITTED"])))
-    stat_table(discipline_rows)
 
-# Duels sits last, only for goalkeepers
-if is_gk:
-    render_duels()
+    # ----------------------------------------------------------------------------
+    # Creativity
+    # ----------------------------------------------------------------------------
+    st.markdown('<div class="section-title">✨ Creativity</div>', unsafe_allow_html=True)
+    stat_table([
+        ("Big Chances", fmt(trow["Big Chances"])),
+        ("Big Chances Created", fmt(trow["Created"])),
+    ])
 
-st.markdown("---")
-st.caption("MPAM FC · Player Review Dashboard")
+    # ----------------------------------------------------------------------------
+    # Possession
+    # ----------------------------------------------------------------------------
+    st.markdown('<div class="section-title">⚠️ Possession Lost & Recovered</div>', unsafe_allow_html=True)
+    total_possession_lost_team = (
+        trow["Possession Lost Own Half"]
+        + trow["Possession Lost Own Half led to a shot"]
+        + trow["Possession Lost Opps Half"]
+        + trow["Possession Lost Opps Half led to a shot"]
+    )
+    total_ball_recovery_team = (
+        trow["Ball Recoveries Own Half"]
+        + trow["Ball Recoveries Own Half led to a shot"]
+        + trow["Ball Recoveries Opps Half"]
+        + trow["Ball Recoveries Opps Half led to a shot"]
+    )
+    poss_col1, poss_col2 = st.columns(2)
+    with poss_col1:
+        stat_table([
+            ("Total Possession Lost", fmt(total_possession_lost_team)),
+            ("Possession Lost — Own Half", fmt(trow["Possession Lost Own Half"])),
+            ("Possession Lost — Own Half Led to a Shot", fmt(trow["Possession Lost Own Half led to a shot"])),
+            ("Possession Lost — Opponent's Half", fmt(trow["Possession Lost Opps Half"])),
+            ("Possession Lost — Opponent's Half Led to a Shot", fmt(trow["Possession Lost Opps Half led to a shot"])),
+        ])
+    with poss_col2:
+        stat_table([
+            ("Total Ball Recovery", fmt(total_ball_recovery_team)),
+            ("Ball Recovery — Own Half", fmt(trow["Ball Recoveries Own Half"])),
+            ("Ball Recovery — Own Half Led to a Shot", fmt(trow["Ball Recoveries Own Half led to a shot"])),
+            ("Ball Recovery — Opponent's Half", fmt(trow["Ball Recoveries Opps Half"])),
+            ("Ball Recovery — Opponent's Half Led to a Shot", fmt(trow["Ball Recoveries Opps Half led to a shot"])),
+        ])
+
+    # ----------------------------------------------------------------------------
+    # Defensive & Discipline
+    # ----------------------------------------------------------------------------
+    st.markdown('<div class="section-title">🛡️ Defensive & Discipline</div>', unsafe_allow_html=True)
+    def_col1, def_col2 = st.columns(2)
+    with def_col1:
+        stat_table([
+            ("Fouls Won", fmt(trow["Fouls Won"])),
+            ("Fouls Committed", fmt(trow["Fouls Commited"])),
+        ])
+    with def_col2:
+        stat_table([
+            ("Yellow Cards", fmt(trow["Yellow Cards"])),
+            ("Red Cards", fmt(trow["Red Cards"])),
+        ])
+
+    # ----------------------------------------------------------------------------
+    # Set Pieces (corners + fouls sequences — team-only, no player equivalent)
+    # ----------------------------------------------------------------------------
+    st.markdown('<div class="section-title">🚩 Set Pieces</div>', unsafe_allow_html=True)
+    sp_col1, sp_col2 = st.columns(2)
+    with sp_col1:
+        st.markdown("**For**")
+        stat_table([
+            ("Corners", fmt(trow["Corners"])),
+            ("Corners → Attempt", fmt(trow["Corners led to an attempt"])),
+            ("Corners → Goal", fmt(trow["Corners led to goal"])),
+            ("Fouls For", fmt(trow["Fouls for"])),
+            ("Fouls For → Attempt", fmt(trow["Fouls led to an attempt"])),
+            ("Fouls For → Goal", fmt(trow["Fouls led to goal"])),
+        ])
+    with sp_col2:
+        st.markdown("**Against**")
+        stat_table([
+            ("Corners", fmt(trow["Opps Corners"])),
+            ("Corners → Attempt", fmt(trow["Opps Corners led to an attempt"])),
+            ("Corners → Goal", fmt(trow["Opps Corners led to goal"])),
+            ("Fouls Against", fmt(trow["Fouls Against"])),
+            ("Fouls Against → Attempt", fmt(trow["Opps Fouls led to an attempt"])),
+            ("Fouls Against → Goal", fmt(trow["Opps Fouls led to goal"])),
+        ])
+
+    st.markdown("---")
+    st.caption("MPAM FC · Team Review Dashboard")

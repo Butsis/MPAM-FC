@@ -106,6 +106,32 @@ st.markdown(
         letter-spacing: 0.05em;
     }}
 
+    .team-scoreline {{
+        text-align: center;
+        font-size: 2.4rem;
+        font-weight: 900;
+        color: #ffffff;
+        letter-spacing: 0.02em;
+        margin: 0.2rem 0 0.8rem 0;
+    }}
+    .pill-row {{
+        display: flex;
+        flex-wrap: wrap;
+        justify-content: center;
+        gap: 0.5rem;
+        margin-bottom: 1rem;
+    }}
+    .pill {{
+        background-color: {CARD};
+        border: 1px solid {ORANGE};
+        border-radius: 999px;
+        padding: 0.35rem 0.9rem;
+        font-size: 0.82rem;
+        font-weight: 600;
+        color: #e5e5e5;
+        white-space: nowrap;
+    }}
+
     section[data-testid="stSidebar"] {{
         background-color: #111111;
         border-right: 1px solid {ORANGE_DARK};
@@ -178,6 +204,11 @@ OUTCOME_LABELS = {
     "Νικη": "Win",
     "Ισοπαλια": "Draw",
     "Ηττα": "Loss",
+}
+
+LOCATION_LABELS = {
+    "Εντος": "Home",
+    "Εκτος": "Away",
 }
 
 # ----------------------------------------------------------------------------
@@ -675,10 +706,10 @@ else:
     # ----------------------------------------------------------------------------
     if is_all_games_team:
         line1 = "All Games"
-        line2 = f"{len(matches)} Matches · Team Review"
+        line2 = "Season Review"
     else:
         line1 = selected_match_meta["matchup"]
-        line2 = f'{selected_match_meta["competition"]} · Team Review'
+        line2 = "Team Review"
 
     st.markdown(
         f"""
@@ -693,30 +724,38 @@ else:
 
     st.markdown(f"## {TEAM_NAME}")
 
-    c1, c2, c3, c4 = st.columns(4)
+    # Scoreline + info pills — deliberately distinct from the player card's
+    # 4-box headline, so it's obvious at a glance which view you're on.
     if is_all_games_team:
-        headline = [
-            (c1, "Matches Played", fmt(matches_played_team)),
-            (c2, "Record", record),
-            (c3, "Goals Scored", fmt(trow["Goals Scored"])),
-            (c4, "Goals Conceded", fmt(trow["Goals Conceded"])),
+        scoreline = f'{fmt(trow["Goals Scored"])} : {fmt(trow["Goals Conceded"])}'
+        pills = [
+            ("📅", f"{matches_played_team} Matches"),
+            ("🏆", record),
         ]
     else:
+        matchup_str = selected_match_meta["matchup"]
+        if matchup_str.startswith(TEAM_NAME):
+            left_goals, right_goals = trow["Goals Scored"], trow["Goals Conceded"]
+        else:
+            left_goals, right_goals = trow["Goals Conceded"], trow["Goals Scored"]
+        scoreline = f'{fmt(left_goals)} - {fmt(right_goals)}'
+
+        location_raw = str(trow["Location"]).strip()
+        location_label = LOCATION_LABELS.get(location_raw, location_raw)
         outcome_raw = str(trow["Outcome"]).strip()
         outcome_label = OUTCOME_LABELS.get(outcome_raw, outcome_raw)
-        headline = [
-            (c1, "Result", outcome_label),
-            (c2, "Goals Scored", fmt(trow["Goals Scored"])),
-            (c3, "Goals Conceded", fmt(trow["Goals Conceded"])),
-            (c4, "Total Shots", fmt(trow["Total Shots"])),
+        date_str = selected_match_meta["date"].strftime("%d %b %Y") if selected_match_meta["date"] is not None else "date n/a"
+
+        pills = [
+            ("🏆", selected_match_meta["competition"]),
+            ("📍", location_label),
+            ("✅" if outcome_label == "Win" else "➖" if outcome_label == "Draw" else "❌", outcome_label),
+            ("📅", date_str),
         ]
 
-    for col, label, value in headline:
-        col.markdown(
-            f'<div class="headline-card"><div class="headline-value">{value}</div>'
-            f'<div class="headline-label">{label}</div></div>',
-            unsafe_allow_html=True,
-        )
+    st.markdown(f'<div class="team-scoreline">{scoreline}</div>', unsafe_allow_html=True)
+    pill_html = "".join(f'<span class="pill">{icon} {text}</span>' for icon, text in pills)
+    st.markdown(f'<div class="pill-row">{pill_html}</div>', unsafe_allow_html=True)
 
     # ----------------------------------------------------------------------------
     # Match-by-match breakdown (All Games mode only)
@@ -730,7 +769,6 @@ else:
             "Result": team_history["Outcome"].map(OUTCOME_LABELS).fillna(team_history["Outcome"]),
             "GF": team_history["Goals Scored"].astype(int),
             "GA": team_history["Goals Conceded"].astype(int),
-            "Shots": team_history["Total Shots"].astype(int),
         })
         st.dataframe(team_breakdown, hide_index=True, use_container_width=True)
 

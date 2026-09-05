@@ -487,10 +487,13 @@ if view_mode == "Player Stats":
 
     def render_duels():
         st.markdown('<div class="section-title">🥊 Duels</div>', unsafe_allow_html=True)
+        total_duels_won = row["OFFENSIVE DUELS WON"] + row["DEFENSIVE DUELS WON"] + row["AERIAL DUES WON"]
+        total_duels = row["TOTAL OFFENSIVE DUELS"] + row["TOTAL DEFENSIVE DUELS"] + row["TOTAL AERIAL DUELS"]
         stat_table([
             ("Offensive Duels", f'{fmt(row["OFFENSIVE DUELS WON"])} / {fmt(row["TOTAL OFFENSIVE DUELS"])} won ({pct(row["OFFENSIVE DUELS WON"], row["TOTAL OFFENSIVE DUELS"])})'),
             ("Defensive Duels", f'{fmt(row["DEFENSIVE DUELS WON"])} / {fmt(row["TOTAL DEFENSIVE DUELS"])} won ({pct(row["DEFENSIVE DUELS WON"], row["TOTAL DEFENSIVE DUELS"])})'),
             ("Aerial Duels", f'{fmt(row["AERIAL DUES WON"])} / {fmt(row["TOTAL AERIAL DUELS"])} won ({pct(row["AERIAL DUES WON"], row["TOTAL AERIAL DUELS"])})'),
+            ("Total Duels", f'{fmt(total_duels_won)} / {fmt(total_duels)} won ({pct(total_duels_won, total_duels)})'),
         ])
 
 
@@ -515,6 +518,11 @@ if view_mode == "Player Stats":
         # Shooting
         # ------------------------------------------------------------------------
         st.markdown('<div class="section-title">🎯 Shooting</div>', unsafe_allow_html=True)
+        total_shots = (
+            row["INSIDE ON TARGET"] + row["INSIDE OFF TARGET"] + row["INSIDE BLOCKED"]
+            + row["OUTSIDE ON TARGET"] + row["OUTSIDE OFF TARGET"] + row["OUTSIDE BLOCKED"]
+        )
+        stat_table([("Total Shots", fmt(total_shots))])
         shoot_col1, shoot_col2 = st.columns(2)
         with shoot_col1:
             st.markdown("**Inside the Box**")
@@ -593,7 +601,7 @@ if view_mode == "Player Stats":
     poss_col1, poss_col2 = st.columns(2)
     with poss_col1:
         stat_table([
-            ("Total Possession Lost", fmt(total_possession_lost)),
+            ("Total Possessions Lost", fmt(total_possession_lost)),
             ("Possession Lost — Own Half", fmt(row["POSSESION LOST OWN HALF"])),
             ("Possession Lost — Own Half Led to Opponent Shot", fmt(row["POSSESSION LOST OWN HALF LED TO A SHOT"])),
             ("Possession Lost — Opponent's Half", fmt(row["POSSESSION LOST OPPs HALF"])),
@@ -601,7 +609,7 @@ if view_mode == "Player Stats":
         ])
     with poss_col2:
         stat_table([
-            ("Total Ball Recovery", fmt(total_ball_recovery)),
+            ("Total Ball Recoveries", fmt(total_ball_recovery)),
             ("Ball Recovery — Own Half", fmt(row["BALL RECOVERY OWN HALF"])),
             ("Ball Recovery — Own Half Led to Our Shot", fmt(row["BALL RECOVERY OWN HALF LED TO A SHOT"])),
             ("Ball Recovery — Opponent's Half", fmt(row["BALL RECOVERY OPPs HALF"])),
@@ -731,10 +739,6 @@ else:
                     &nbsp;-&nbsp;
                     <span style="color:{result_color};">{fmt(right_goals)}</span> {team_right}
                 </div>
-                <div style="font-size:0.8rem; font-weight:700; color:{result_color};
-                            text-transform:uppercase; letter-spacing:0.08em; margin-top:0.4rem;">
-                    {outcome_label}
-                </div>
             </div>
             """,
             unsafe_allow_html=True,
@@ -759,6 +763,11 @@ else:
     # Shooting (from Sheet2, summed across all players — same format as player cards)
     # ----------------------------------------------------------------------------
     st.markdown('<div class="section-title">🎯 Shooting</div>', unsafe_allow_html=True)
+    team_total_shots = (
+        p2row["INSIDE ON TARGET"] + p2row["INSIDE OFF TARGET"] + p2row["INSIDE BLOCKED"]
+        + p2row["OUTSIDE ON TARGET"] + p2row["OUTSIDE OFF TARGET"] + p2row["OUTSIDE BLOCKED"]
+    )
+    stat_table([("Total Shots", fmt(team_total_shots))])
     shoot_col1, shoot_col2 = st.columns(2)
     with shoot_col1:
         st.markdown("**Inside the Box**")
@@ -789,10 +798,13 @@ else:
     # Duels
     # ----------------------------------------------------------------------------
     st.markdown('<div class="section-title">🥊 Duels</div>', unsafe_allow_html=True)
+    team_total_duels_won = trow["Offensive Duels Won"] + trow["Defensive Duels Won"] + trow["Aerial Duels Won"]
+    team_total_duels = trow["Total Offensive Duels"] + trow["Total Defensive Duels"] + trow["Total Aerial Duels"]
     stat_table([
         ("Offensive Duels", f'{fmt(trow["Offensive Duels Won"])} / {fmt(trow["Total Offensive Duels"])} won ({pct(trow["Offensive Duels Won"], trow["Total Offensive Duels"])})'),
         ("Defensive Duels", f'{fmt(trow["Defensive Duels Won"])} / {fmt(trow["Total Defensive Duels"])} won ({pct(trow["Defensive Duels Won"], trow["Total Defensive Duels"])})'),
         ("Aerial Duels", f'{fmt(trow["Aerial Duels Won"])} / {fmt(trow["Total Aerial Duels"])} won ({pct(trow["Aerial Duels Won"], trow["Total Aerial Duels"])})'),
+        ("Total Duels", f'{fmt(team_total_duels_won)} / {fmt(team_total_duels)} won ({pct(team_total_duels_won, team_total_duels)})'),
     ])
 
     # ----------------------------------------------------------------------------
@@ -844,7 +856,7 @@ else:
     poss_col1, poss_col2 = st.columns(2)
     with poss_col1:
         stat_table([
-            ("Total Possession Lost", fmt(total_possession_lost_team)),
+            ("Total Possessions Lost", fmt(total_possession_lost_team)),
             ("Possession Lost — Own Half", fmt(trow["Possession Lost Own Half"])),
             ("Possession Lost — Own Half Led to a Shot", fmt(trow["Possession Lost Own Half led to a shot"])),
             ("Possession Lost — Opponent's Half", fmt(trow["Possession Lost Opps Half"])),
@@ -852,7 +864,7 @@ else:
         ])
     with poss_col2:
         stat_table([
-            ("Total Ball Recovery", fmt(total_ball_recovery_team)),
+            ("Total Ball Recoveries", fmt(total_ball_recovery_team)),
             ("Ball Recovery — Own Half", fmt(trow["Ball Recoveries Own Half"])),
             ("Ball Recovery — Own Half Led to a Shot", fmt(trow["Ball Recoveries Own Half led to a shot"])),
             ("Ball Recovery — Opponent's Half", fmt(trow["Ball Recoveries Opps Half"])),

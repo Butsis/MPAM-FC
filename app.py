@@ -693,28 +693,50 @@ else:
 
     st.markdown(f"## {TEAM_NAME}")
 
-    c1, c2, c3, c4 = st.columns(4)
     if is_all_games_team:
+        c1, c2, c3, c4 = st.columns(4)
         headline = [
             (c1, "Matches Played", fmt(matches_played_team)),
             (c2, "Record", record),
             (c3, "Goals Scored", fmt(trow["Goals Scored"])),
             (c4, "Goals Conceded", fmt(trow["Goals Conceded"])),
         ]
+        for col, label, value in headline:
+            col.markdown(
+                f'<div class="headline-card"><div class="headline-value">{value}</div>'
+                f'<div class="headline-label">{label}</div></div>',
+                unsafe_allow_html=True,
+            )
     else:
         outcome_raw = str(trow["Outcome"]).strip()
         outcome_label = OUTCOME_LABELS.get(outcome_raw, outcome_raw)
-        headline = [
-            (c1, "Result", outcome_label),
-            (c2, "Goals Scored", fmt(trow["Goals Scored"])),
-            (c3, "Goals Conceded", fmt(trow["Goals Conceded"])),
-            (c4, "Total Shots", fmt(trow["Total Shots"])),
-        ]
 
-    for col, label, value in headline:
-        col.markdown(
-            f'<div class="headline-card"><div class="headline-value">{value}</div>'
-            f'<div class="headline-label">{label}</div></div>',
+        result_colors = {"Win": ORANGE, "Draw": "#9ca3af", "Loss": "#ef4444"}
+        result_color = result_colors.get(outcome_label, ORANGE)
+
+        matchup_str = selected_match_meta["matchup"]
+        team_left, team_right = [t.strip() for t in matchup_str.split(" vs ")]
+        if team_left == TEAM_NAME:
+            left_goals, right_goals = trow["Goals Scored"], trow["Goals Conceded"]
+        else:
+            left_goals, right_goals = trow["Goals Conceded"], trow["Goals Scored"]
+
+        st.markdown(
+            f"""
+            <div style="background-color:{CARD}; border:1px solid #2a2a2a;
+                        border-left:4px solid {result_color}; border-radius:10px;
+                        padding:1.2rem; text-align:center; margin-bottom:1rem;">
+                <div style="font-size:1.6rem; font-weight:800; color:#e5e5e5;">
+                    {team_left} <span style="color:{result_color};">{fmt(left_goals)}</span>
+                    &nbsp;-&nbsp;
+                    <span style="color:{result_color};">{fmt(right_goals)}</span> {team_right}
+                </div>
+                <div style="font-size:0.8rem; font-weight:700; color:{result_color};
+                            text-transform:uppercase; letter-spacing:0.08em; margin-top:0.4rem;">
+                    {outcome_label}
+                </div>
+            </div>
+            """,
             unsafe_allow_html=True,
         )
 

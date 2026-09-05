@@ -524,10 +524,12 @@ if view_mode == "Player Stats":
         )
         total_shots_on_target = row["INSIDE ON TARGET"] + row["OUTSIDE ON TARGET"]
         total_shots_off_target = row["INSIDE OFF TARGET"] + row["OUTSIDE OFF TARGET"]
+        total_shots_blocked = row["INSIDE BLOCKED"] + row["OUTSIDE BLOCKED"]
         stat_table([
             ("Total Shots", fmt(total_shots)),
             ("Total Shots On Target", fmt(total_shots_on_target)),
             ("Total Shots Off Target", fmt(total_shots_off_target)),
+            ("Total Shots Blocked", fmt(total_shots_blocked)),
         ])
         shoot_col1, shoot_col2 = st.columns(2)
         with shoot_col1:
@@ -775,10 +777,12 @@ else:
     )
     team_total_shots_on_target = p2row["INSIDE ON TARGET"] + p2row["OUTSIDE ON TARGET"]
     team_total_shots_off_target = p2row["INSIDE OFF TARGET"] + p2row["OUTSIDE OFF TARGET"]
+    team_total_shots_blocked = p2row["INSIDE BLOCKED"] + p2row["OUTSIDE BLOCKED"]
     stat_table([
         ("Total Shots", fmt(team_total_shots)),
         ("Total Shots On Target", fmt(team_total_shots_on_target)),
         ("Total Shots Off Target", fmt(team_total_shots_off_target)),
+        ("Total Shots Blocked", fmt(team_total_shots_blocked)),
     ])
     shoot_col1, shoot_col2 = st.columns(2)
     with shoot_col1:

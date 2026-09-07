@@ -346,7 +346,7 @@ st.sidebar.markdown(
 
 # ---- View toggle ----
 st.sidebar.markdown("### 📊 View")
-view_mode = st.sidebar.radio("View", ["Player Stats", "Team Stats"], label_visibility="collapsed", key="view_mode")
+view_mode = st.sidebar.radio("View", ["Team Stats", "Player Stats"], label_visibility="collapsed", key="view_mode")
 
 # ---- Match filter (searchable) ----
 st.sidebar.markdown("### 🗓️ Select Match")
@@ -846,7 +846,7 @@ else:
     # ----------------------------------------------------------------------------
     # Shooting comparison — our shooting vs opponent shooting from Sheet3
     # ----------------------------------------------------------------------------
-    st.markdown('<div class="section-title">🎯 Shooting Comparison</div>', unsafe_allow_html=True)
+    st.markdown('<div class="section-title">🎯 Shooting</div>', unsafe_allow_html=True)
 
     team_total_shots = (
         p2row["INSIDE ON TARGET"] + p2row["INSIDE OFF TARGET"] + p2row["INSIDE BLOCKED"]

@@ -863,31 +863,26 @@ else:
         us_pct_text = f"{us_pct}%" if total > 0 else "—"
         opp_pct_text = f"{opp_pct}%" if total > 0 else "—"
 
-        return f"""
-        <div style="margin-bottom:0.85rem;">
-            <div style="font-size:0.85rem; color:#a3a3a3; margin-bottom:0.25rem;">{label}</div>
-            <div style="display:flex; align-items:center; gap:0.5rem;">
-                <div style="min-width:64px; text-align:right; font-weight:700; color:{us_color}; font-size:0.9rem;">
-                    {fmt(us_val)} <span style="font-weight:500; opacity:0.8;">({us_pct_text})</span>
-                </div>
-                <div style="flex:1; display:flex; height:10px; border-radius:6px; overflow:hidden; background:#2a2a2a;">
-                    <div style="width:{us_pct}%; background:{us_color};"></div>
-                    <div style="width:{opp_pct}%; background:{opp_color};"></div>
-                </div>
-                <div style="min-width:64px; text-align:left; font-weight:700; color:{opp_color}; font-size:0.9rem;">
-                    <span style="font-weight:500; opacity:0.8;">({opp_pct_text})</span> {fmt(opp_val)}
-                </div>
-            </div>
-        </div>
-        """
+        return (
+            '<div style="margin-bottom:0.85rem;">'
+            f'<div style="font-size:0.85rem; color:#a3a3a3; margin-bottom:0.25rem;">{label}</div>'
+            '<div style="display:flex; align-items:center; gap:0.5rem;">'
+            f'<div style="min-width:64px; text-align:right; font-weight:700; color:{us_color}; font-size:0.9rem;">'
+            f'{fmt(us_val)} <span style="font-weight:500; opacity:0.8;">({us_pct_text})</span></div>'
+            '<div style="flex:1; display:flex; height:10px; border-radius:6px; overflow:hidden; background:#2a2a2a;">'
+            f'<div style="width:{us_pct}%; background:{us_color};"></div>'
+            f'<div style="width:{opp_pct}%; background:{opp_color};"></div>'
+            '</div>'
+            f'<div style="min-width:64px; text-align:left; font-weight:700; color:{opp_color}; font-size:0.9rem;">'
+            f'<span style="font-weight:500; opacity:0.8;">({opp_pct_text})</span> {fmt(opp_val)}</div>'
+            '</div></div>'
+        )
 
-    legend_html = f"""
-    <div style="display:flex; justify-content:space-between; font-size:0.8rem; font-weight:700;
-                color:#e5e5e5; margin-bottom:0.6rem; text-transform:uppercase; letter-spacing:0.04em;">
-        <span>{TEAM_NAME}</span>
-        <span>{opponent_label}</span>
-    </div>
-    """
+    legend_html = (
+        '<div style="display:flex; justify-content:space-between; font-size:0.8rem; font-weight:700; '
+        'color:#e5e5e5; margin-bottom:0.6rem; text-transform:uppercase; letter-spacing:0.04em;">'
+        f'<span>{TEAM_NAME}</span><span>{opponent_label}</span></div>'
+    )
 
     rows_html = "".join([
         comparison_row("Total Shots", team_total_shots, opp_total_shots),

@@ -825,6 +825,7 @@ else:
     team_total_shots_blocked = p2row["INSIDE BLOCKED"] + p2row["OUTSIDE BLOCKED"]
     team_inside_box = p2row["INSIDE ON TARGET"] + p2row["INSIDE OFF TARGET"] + p2row["INSIDE BLOCKED"]
     team_outside_box = p2row["OUTSIDE ON TARGET"] + p2row["OUTSIDE OFF TARGET"] + p2row["OUTSIDE BLOCKED"]
+    team_big_chances = p2row["BIG CHANCES SCORED"] + p2row["BIG CHANCES MISSED"]
 
     opp_total_shots = opponent_shooting.get("Total Shots Opp", 0)
     opp_on_target = opponent_shooting.get("Shots On Target Opp", 0)
@@ -834,39 +835,75 @@ else:
     opp_outside_box = opponent_shooting.get("Outside the Box Opp", 0)
     opp_big_chances = opponent_shooting.get("Big Chances Opp", 0)
 
-    comparison = pd.DataFrame({
-        "": [
-            "Total Shots",
-            "Shots On Target",
-            "Shots Off Target",
-            "Shots Blocked",
-            "Inside the Box",
-            "Outside the Box",
-            "Big Chances",
-        ],
-        TEAM_NAME: [
-            team_total_shots,
-            team_total_shots_on_target,
-            team_total_shots_off_target,
-            team_total_shots_blocked,
-            team_inside_box,
-            team_outside_box,
-            p2row["BIG CHANCES SCORED"] + p2row["BIG CHANCES MISSED"],
-        ],
-        "Opponent": [
-            opp_total_shots,
-            opp_on_target,
-            opp_off_target,
-            opp_blocked,
-            opp_inside_box,
-            opp_outside_box,
-            opp_big_chances,
-        ],
-    })
+    opponent_label = selected_match_meta["opponent"] if not is_all_games_team else "Opponents"
 
-    comparison[TEAM_NAME] = comparison[TEAM_NAME].apply(fmt)
-    comparison["Opponent"] = comparison["Opponent"].apply(fmt)
-    st.dataframe(comparison, hide_index=True, use_container_width=True)
+    # Contextual colors: whoever leads a given stat gets the accent color for
+    # that row (orange for us, red for the opponent); the trailing side is
+    # muted gray; a tie keeps both neutral.
+    LEAD_US = ORANGE
+    LEAD_OPP = "#ef4444"
+    TRAIL = "#6b7280"
+    TIE = "#9ca3af"
+
+    def comparison_row(label, us_val, opp_val):
+        total = us_val + opp_val
+        if total > 0:
+            us_pct = round(us_val / total * 100)
+            opp_pct = 100 - us_pct
+        else:
+            us_pct = opp_pct = 50
+
+        if us_val > opp_val:
+            us_color, opp_color = LEAD_US, TRAIL
+        elif opp_val > us_val:
+            us_color, opp_color = TRAIL, LEAD_OPP
+        else:
+            us_color = opp_color = TIE
+
+        us_pct_text = f"{us_pct}%" if total > 0 else "—"
+        opp_pct_text = f"{opp_pct}%" if total > 0 else "—"
+
+        return f"""
+        <div style="margin-bottom:0.85rem;">
+            <div style="font-size:0.85rem; color:#a3a3a3; margin-bottom:0.25rem;">{label}</div>
+            <div style="display:flex; align-items:center; gap:0.5rem;">
+                <div style="min-width:64px; text-align:right; font-weight:700; color:{us_color}; font-size:0.9rem;">
+                    {fmt(us_val)} <span style="font-weight:500; opacity:0.8;">({us_pct_text})</span>
+                </div>
+                <div style="flex:1; display:flex; height:10px; border-radius:6px; overflow:hidden; background:#2a2a2a;">
+                    <div style="width:{us_pct}%; background:{us_color};"></div>
+                    <div style="width:{opp_pct}%; background:{opp_color};"></div>
+                </div>
+                <div style="min-width:64px; text-align:left; font-weight:700; color:{opp_color}; font-size:0.9rem;">
+                    <span style="font-weight:500; opacity:0.8;">({opp_pct_text})</span> {fmt(opp_val)}
+                </div>
+            </div>
+        </div>
+        """
+
+    legend_html = f"""
+    <div style="display:flex; justify-content:space-between; font-size:0.8rem; font-weight:700;
+                color:#e5e5e5; margin-bottom:0.6rem; text-transform:uppercase; letter-spacing:0.04em;">
+        <span>{TEAM_NAME}</span>
+        <span>{opponent_label}</span>
+    </div>
+    """
+
+    rows_html = "".join([
+        comparison_row("Total Shots", team_total_shots, opp_total_shots),
+        comparison_row("Shots On Target", team_total_shots_on_target, opp_on_target),
+        comparison_row("Shots Off Target", team_total_shots_off_target, opp_off_target),
+        comparison_row("Shots Blocked", team_total_shots_blocked, opp_blocked),
+        comparison_row("Inside the Box", team_inside_box, opp_inside_box),
+        comparison_row("Outside the Box", team_outside_box, opp_outside_box),
+        comparison_row("Big Chances", team_big_chances, opp_big_chances),
+    ])
+
+    st.markdown(
+        f'<div style="background-color:{CARD}; border:1px solid #2a2a2a; border-radius:10px; padding:1rem 1.2rem;">'
+        f'{legend_html}{rows_html}</div>',
+        unsafe_allow_html=True,
+    )
 
     # Keep the detailed MPAM FC shooting breakdown below the comparison.
     shoot_col1, shoot_col2 = st.columns(2)

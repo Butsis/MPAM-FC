@@ -198,6 +198,7 @@ def load_all_matches(fingerprint):
     match_files = [f for f, _ in fingerprint]
     player_frames = []
     team_rows = []
+    opponent_rows = []
     match_meta = []
     skipped = []
 
@@ -205,6 +206,10 @@ def load_all_matches(fingerprint):
         try:
             sheet1 = pd.read_excel(f, sheet_name="Sheet1")
             sheet2 = pd.read_excel(f, sheet_name="Sheet2")
+            try:
+                sheet3 = pd.read_excel(f, sheet_name="Sheet3")
+            except Exception:
+                sheet3 = pd.DataFrame()
         except Exception:
             skipped.append(f)
             continue
@@ -262,16 +267,32 @@ def load_all_matches(fingerprint):
         team_row["__date"] = date_val
         team_rows.append(team_row)
 
+        # Opponent shooting row, from Sheet3 (one row per match)
+        # Sheet3 contains the only opponent-level information available.
+        if not sheet3.empty:
+            opponent_row = sheet3.iloc[0].copy()
+            opponent_text_cols = ["Opponent", "Game ID"]
+            for col in sheet3.columns:
+                if col not in opponent_text_cols:
+                    opponent_row[col] = pd.to_numeric(
+                        pd.Series([opponent_row[col]]), errors="coerce"
+                    ).fillna(0).iloc[0]
+            opponent_row["__match_id"] = game_id
+            opponent_row["__matchup"] = matchup
+            opponent_row["__date"] = date_val
+            opponent_rows.append(opponent_row)
+
     if not player_frames:
-        return pd.DataFrame(), pd.DataFrame(), [], skipped
+        return pd.DataFrame(), pd.DataFrame(), pd.DataFrame(), [], skipped
 
     combined = pd.concat(player_frames, ignore_index=True)
     team_df = pd.DataFrame(team_rows).reset_index(drop=True)
+    opponent_df = pd.DataFrame(opponent_rows).reset_index(drop=True)
     match_meta.sort(key=lambda m: m["date"] if m["date"] is not None else pd.Timestamp.min, reverse=True)
-    return combined, team_df, match_meta, skipped
+    return combined, team_df, opponent_df, match_meta, skipped
 
 
-combined_df, team_df, matches, skipped_files = load_all_matches(_files_fingerprint())
+combined_df, team_df, opponent_df, matches, skipped_files = load_all_matches(_files_fingerprint())
 
 if combined_df.empty:
     st.error("No match files found. Add at least one .xlsx match export to this app's folder.")
@@ -686,6 +707,29 @@ else:
     p2_stat_cols = [c for c in player_subset.columns if c not in NON_STAT_COLS]
     p2row = player_subset[p2_stat_cols].sum()
 
+    # Sheet3-based opponent shooting aggregation.
+    # In "All Games" mode we sum the opponent's shot totals across matches;
+    # for a single match we use that match's Sheet3 row.
+    if is_all_games_team:
+        opponent_subset = opponent_df
+    else:
+        opponent_subset = opponent_df[opponent_df["__match_id"] == selected_match_id]
+
+    if not opponent_subset.empty:
+        opponent_shooting = opponent_subset[
+            [c for c in [
+                "Total Shots Opp",
+                "Shots On Target Opp",
+                "Shots Off Target Opp",
+                "Shots Blocked Opp",
+                "Inside the Box Opp",
+                "Outside the Box Opp",
+                "Big Chances Opp",
+            ] if c in opponent_subset.columns]
+        ].sum()
+    else:
+        opponent_shooting = pd.Series(dtype=float)
+
     # ----------------------------------------------------------------------------
     # Center header: logo + matchup / season info
     # ----------------------------------------------------------------------------
@@ -768,9 +812,10 @@ else:
         st.dataframe(team_breakdown, hide_index=True, use_container_width=True)
 
     # ----------------------------------------------------------------------------
-    # Shooting (from Sheet2, summed across all players — same format as player cards)
+    # Shooting comparison — our shooting vs opponent shooting from Sheet3
     # ----------------------------------------------------------------------------
-    st.markdown('<div class="section-title">🎯 Shooting</div>', unsafe_allow_html=True)
+    st.markdown('<div class="section-title">🎯 Shooting Comparison</div>', unsafe_allow_html=True)
+
     team_total_shots = (
         p2row["INSIDE ON TARGET"] + p2row["INSIDE OFF TARGET"] + p2row["INSIDE BLOCKED"]
         + p2row["OUTSIDE ON TARGET"] + p2row["OUTSIDE OFF TARGET"] + p2row["OUTSIDE BLOCKED"]
@@ -778,28 +823,69 @@ else:
     team_total_shots_on_target = p2row["INSIDE ON TARGET"] + p2row["OUTSIDE ON TARGET"]
     team_total_shots_off_target = p2row["INSIDE OFF TARGET"] + p2row["OUTSIDE OFF TARGET"]
     team_total_shots_blocked = p2row["INSIDE BLOCKED"] + p2row["OUTSIDE BLOCKED"]
-    stat_table([
-        ("Total Shots", fmt(team_total_shots)),
-        ("Total Shots On Target", fmt(team_total_shots_on_target)),
-        ("Total Shots Off Target", fmt(team_total_shots_off_target)),
-        ("Total Shots Blocked", fmt(team_total_shots_blocked)),
-    ])
+    team_inside_box = p2row["INSIDE ON TARGET"] + p2row["INSIDE OFF TARGET"] + p2row["INSIDE BLOCKED"]
+    team_outside_box = p2row["OUTSIDE ON TARGET"] + p2row["OUTSIDE OFF TARGET"] + p2row["OUTSIDE BLOCKED"]
+
+    opp_total_shots = opponent_shooting.get("Total Shots Opp", 0)
+    opp_on_target = opponent_shooting.get("Shots On Target Opp", 0)
+    opp_off_target = opponent_shooting.get("Shots Off Target Opp", 0)
+    opp_blocked = opponent_shooting.get("Shots Blocked Opp", 0)
+    opp_inside_box = opponent_shooting.get("Inside the Box Opp", 0)
+    opp_outside_box = opponent_shooting.get("Outside the Box Opp", 0)
+    opp_big_chances = opponent_shooting.get("Big Chances Opp", 0)
+
+    comparison = pd.DataFrame({
+        "": [
+            "Total Shots",
+            "Shots On Target",
+            "Shots Off Target",
+            "Shots Blocked",
+            "Inside the Box",
+            "Outside the Box",
+            "Big Chances",
+        ],
+        TEAM_NAME: [
+            team_total_shots,
+            team_total_shots_on_target,
+            team_total_shots_off_target,
+            team_total_shots_blocked,
+            team_inside_box,
+            team_outside_box,
+            p2row["BIG CHANCES SCORED"] + p2row["BIG CHANCES MISSED"],
+        ],
+        "Opponent": [
+            opp_total_shots,
+            opp_on_target,
+            opp_off_target,
+            opp_blocked,
+            opp_inside_box,
+            opp_outside_box,
+            opp_big_chances,
+        ],
+    })
+
+    comparison[TEAM_NAME] = comparison[TEAM_NAME].apply(fmt)
+    comparison["Opponent"] = comparison["Opponent"].apply(fmt)
+    st.dataframe(comparison, hide_index=True, use_container_width=True)
+
+    # Keep the detailed MPAM FC shooting breakdown below the comparison.
     shoot_col1, shoot_col2 = st.columns(2)
     with shoot_col1:
-        st.markdown("**Inside the Box**")
+        st.markdown(f"**{TEAM_NAME} — Inside the Box**")
         stat_table([
             ("Shots On Target", fmt(p2row["INSIDE ON TARGET"])),
             ("Shots Off Target", fmt(p2row["INSIDE OFF TARGET"])),
             ("Shots Blocked", fmt(p2row["INSIDE BLOCKED"])),
         ])
     with shoot_col2:
-        st.markdown("**Outside the Box**")
+        st.markdown(f"**{TEAM_NAME} — Outside the Box**")
         stat_table([
             ("Shots On Target", fmt(p2row["OUTSIDE ON TARGET"])),
             ("Shots Off Target", fmt(p2row["OUTSIDE OFF TARGET"])),
             ("Shots Blocked", fmt(p2row["OUTSIDE BLOCKED"])),
         ])
-    st.markdown("**Big Chances**")
+
+    st.markdown(f"**{TEAM_NAME} — Big Chances**")
     team_big_chance_rows = [
         ("Big Chances Scored", fmt(p2row["BIG CHANCES SCORED"])),
         ("Big Chances Missed", fmt(p2row["BIG CHANCES MISSED"])),

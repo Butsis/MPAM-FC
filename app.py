@@ -86,6 +86,38 @@ st.markdown(
         border-bottom: none;
     }}
 
+    .compare-table {{
+        width: 100%;
+        border-collapse: collapse;
+        margin-bottom: 0.5rem;
+    }}
+    .compare-table th {{
+        padding: 0.5rem 0.7rem;
+        font-size: 0.75rem;
+        text-transform: uppercase;
+        letter-spacing: 0.04em;
+        color: #a3a3a3;
+        border-bottom: 2px solid {ORANGE_DARK};
+        text-align: center;
+        font-weight: 700;
+    }}
+    .compare-table th:first-child {{
+        text-align: left;
+    }}
+    .compare-table td {{
+        padding: 0.5rem 0.7rem;
+        border-bottom: 1px solid #2a2a2a;
+        font-size: 0.92rem;
+        text-align: center;
+    }}
+    .compare-table td:first-child {{
+        text-align: left;
+        color: #a3a3a3;
+    }}
+    .compare-table tr:last-child td {{
+        border-bottom: none;
+    }}
+
     .headline-card {{
         background-color: {CARD};
         border: 1px solid #2a2a2a;
@@ -837,52 +869,28 @@ else:
 
     opponent_label = selected_match_meta["opponent"] if not is_all_games_team else "Opponents"
 
-    # Contextual colors: whoever leads a given stat gets the accent color for
-    # that row (orange for us, red for the opponent); the trailing side is
-    # muted gray; a tie keeps both neutral.
+    # Contextual colors: whoever leads a given stat is highlighted (orange for
+    # us, red for the opponent); the trailing side stays plain; a tie keeps
+    # both neutral.
     LEAD_US = ORANGE
     LEAD_OPP = "#ef4444"
-    TRAIL = "#6b7280"
     TIE = "#9ca3af"
 
     def comparison_row(label, us_val, opp_val):
-        total = us_val + opp_val
-        if total > 0:
-            us_pct = round(us_val / total * 100)
-            opp_pct = 100 - us_pct
-        else:
-            us_pct = opp_pct = 50
-
         if us_val > opp_val:
-            us_color, opp_color = LEAD_US, TRAIL
+            us_style = f'font-weight:700; color:{LEAD_US};'
+            opp_style = 'color:#e5e5e5;'
         elif opp_val > us_val:
-            us_color, opp_color = TRAIL, LEAD_OPP
+            us_style = 'color:#e5e5e5;'
+            opp_style = f'font-weight:700; color:{LEAD_OPP};'
         else:
-            us_color = opp_color = TIE
-
-        us_pct_text = f"{us_pct}%" if total > 0 else "—"
-        opp_pct_text = f"{opp_pct}%" if total > 0 else "—"
+            us_style = opp_style = f'color:{TIE};'
 
         return (
-            '<div style="margin-bottom:0.85rem;">'
-            f'<div style="font-size:0.85rem; color:#a3a3a3; margin-bottom:0.25rem;">{label}</div>'
-            '<div style="display:flex; align-items:center; gap:0.5rem;">'
-            f'<div style="min-width:64px; text-align:right; font-weight:700; color:{us_color}; font-size:0.9rem;">'
-            f'{fmt(us_val)} <span style="font-weight:500; opacity:0.8;">({us_pct_text})</span></div>'
-            '<div style="flex:1; display:flex; height:10px; border-radius:6px; overflow:hidden; background:#2a2a2a;">'
-            f'<div style="width:{us_pct}%; background:{us_color};"></div>'
-            f'<div style="width:{opp_pct}%; background:{opp_color};"></div>'
-            '</div>'
-            f'<div style="min-width:64px; text-align:left; font-weight:700; color:{opp_color}; font-size:0.9rem;">'
-            f'<span style="font-weight:500; opacity:0.8;">({opp_pct_text})</span> {fmt(opp_val)}</div>'
-            '</div></div>'
+            f'<tr><td>{label}</td>'
+            f'<td style="{us_style}">{fmt(us_val)}</td>'
+            f'<td style="{opp_style}">{fmt(opp_val)}</td></tr>'
         )
-
-    legend_html = (
-        '<div style="display:flex; justify-content:space-between; font-size:0.8rem; font-weight:700; '
-        'color:#e5e5e5; margin-bottom:0.6rem; text-transform:uppercase; letter-spacing:0.04em;">'
-        f'<span>{TEAM_NAME}</span><span>{opponent_label}</span></div>'
-    )
 
     rows_html = "".join([
         comparison_row("Total Shots", team_total_shots, opp_total_shots),
@@ -895,8 +903,7 @@ else:
     ])
 
     st.markdown(
-        f'<div style="background-color:{CARD}; border:1px solid #2a2a2a; border-radius:10px; padding:1rem 1.2rem;">'
-        f'{legend_html}{rows_html}</div>',
+        f'<table class="compare-table"><tr><th></th><th>{TEAM_NAME}</th><th>{opponent_label}</th></tr>{rows_html}</table>',
         unsafe_allow_html=True,
     )
 

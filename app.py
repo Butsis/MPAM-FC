@@ -807,7 +807,7 @@ if view_mode == "Player Stats":
         multi_col_table(
             ["", "1st Half", "2nd Half", total_label],
             [
-                ("Distance (m)", fmt1(h1_distance), fmt1(h2_distance), fmt1(total_distance)),
+                ("Distance (meters)", fmt1(h1_distance), fmt1(h2_distance), fmt1(total_distance)),
                 ("Max Speed (km/h)", fmt1(h1_maxspeed), fmt1(h2_maxspeed), fmt1(total_maxspeed)),
                 ("Dist. Speed 20→25 (km/h)", fmt1(h1_distspeed), fmt1(h2_distspeed), fmt1(total_distspeed)),
             ],
@@ -1190,9 +1190,9 @@ else:
         multi_col_table(
             ["", "1st Half", "2nd Half", overall_label],
             [
-                ("Distance (m)", fmt1(t1_distance), fmt1(t2_distance), fmt1(overall_distance)),
-                ("Max Speed (km/h)", fmt1(t1_maxspeed), fmt1(t2_maxspeed), fmt1(overall_maxspeed)),
-                ("Dist. Speed 20→25 (km/h)", fmt1(t1_distspeed), fmt1(t2_distspeed), fmt1(overall_distspeed)),
+                ("Average Distance (meters)", fmt1(t1_distance), fmt1(t2_distance), fmt1(overall_distance)),
+                ("Average Max Speed (km/h)", fmt1(t1_maxspeed), fmt1(t2_maxspeed), fmt1(overall_maxspeed)),
+                ("Average Dist. Speed 20→25 (km/h)", fmt1(t1_distspeed), fmt1(t2_distspeed), fmt1(overall_distspeed)),
             ],
         )
 

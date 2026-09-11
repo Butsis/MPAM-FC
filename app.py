@@ -1052,8 +1052,8 @@ else:
 
     def duel_row(label, won, total):
         if total > 0:
-            win_pct = won / total * 100
-            pct_text = f"{win_pct:.0f}%"
+            win_pct = round(won / total * 100)
+            pct_text = f"{win_pct}%"
             color = ORANGE if win_pct > 50 else "#ef4444" if win_pct < 50 else "#9ca3af"
         else:
             pct_text = "—"

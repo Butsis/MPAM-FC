@@ -565,7 +565,7 @@ if view_mode == "Player Stats":
     # ----------------------------------------------------------------------------
     # Player header + headline boxes
     # ----------------------------------------------------------------------------
-    st.markdown(f"## {selected_player}")
+    st.markdown(f'<h2 style="margin:0.3rem 0 0.2rem 0;">{selected_player}</h2>', unsafe_allow_html=True)
     st.markdown(f"**Position:** {format_position(row['POSITION'])}")
 
     c1, c2, c3, c4 = st.columns(4)
@@ -892,7 +892,7 @@ else:
         unsafe_allow_html=True,
     )
 
-    st.markdown(f"## {TEAM_NAME}")
+    st.markdown(f'<h2 style="margin:0.3rem 0 0.2rem 0;">{TEAM_NAME}</h2>', unsafe_allow_html=True)
 
     if is_all_games_team:
         c1, c2, c3, c4 = st.columns(4)

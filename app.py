@@ -1049,12 +1049,27 @@ else:
     st.markdown('<div class="section-title">🥊 Duels</div>', unsafe_allow_html=True)
     team_total_duels_won = trow["Offensive Duels Won"] + trow["Defensive Duels Won"] + trow["Aerial Duels Won"]
     team_total_duels = trow["Total Offensive Duels"] + trow["Total Defensive Duels"] + trow["Total Aerial Duels"]
-    stat_table([
-        ("Offensive Duels", f'{fmt(trow["Offensive Duels Won"])} / {fmt(trow["Total Offensive Duels"])} won ({pct(trow["Offensive Duels Won"], trow["Total Offensive Duels"])})'),
-        ("Defensive Duels", f'{fmt(trow["Defensive Duels Won"])} / {fmt(trow["Total Defensive Duels"])} won ({pct(trow["Defensive Duels Won"], trow["Total Defensive Duels"])})'),
-        ("Aerial Duels", f'{fmt(trow["Aerial Duels Won"])} / {fmt(trow["Total Aerial Duels"])} won ({pct(trow["Aerial Duels Won"], trow["Total Aerial Duels"])})'),
-        ("Total Duels", f'{fmt(team_total_duels_won)} / {fmt(team_total_duels)} won ({pct(team_total_duels_won, team_total_duels)})'),
+
+    def duel_row(label, won, total):
+        if total > 0:
+            win_pct = won / total * 100
+            pct_text = f"{win_pct:.0f}%"
+            color = ORANGE if win_pct > 50 else "#ef4444" if win_pct < 50 else "#9ca3af"
+        else:
+            pct_text = "—"
+            color = "#9ca3af"
+        return (
+            f'<tr><td class="label">{label}</td>'
+            f'<td class="value" style="color:{color};">{fmt(won)} / {fmt(total)} won ({pct_text})</td></tr>'
+        )
+
+    duel_rows_html = "".join([
+        duel_row("Offensive Duels", trow["Offensive Duels Won"], trow["Total Offensive Duels"]),
+        duel_row("Defensive Duels", trow["Defensive Duels Won"], trow["Total Defensive Duels"]),
+        duel_row("Aerial Duels", trow["Aerial Duels Won"], trow["Total Aerial Duels"]),
+        duel_row("Total Duels", team_total_duels_won, team_total_duels),
     ])
+    st.markdown(f'<table class="stat-table">{duel_rows_html}</table>', unsafe_allow_html=True)
 
     # ----------------------------------------------------------------------------
     # Passing (from Sheet2, summed across all players — same format as player cards)

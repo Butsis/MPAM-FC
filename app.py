@@ -966,6 +966,7 @@ else:
     team_inside_box = p2row["INSIDE ON TARGET"] + p2row["INSIDE OFF TARGET"] + p2row["INSIDE BLOCKED"]
     team_outside_box = p2row["OUTSIDE ON TARGET"] + p2row["OUTSIDE OFF TARGET"] + p2row["OUTSIDE BLOCKED"]
     team_big_chances = p2row["BIG CHANCES SCORED"] + p2row["BIG CHANCES MISSED"]
+    team_gk_saves = p2row["SAVES INSIDE THE BOX"] + p2row["SAVES OUTSIDE THE BOX"]
 
     opp_total_shots = opponent_shooting.get("Total Shots Opp", 0)
     opp_on_target = opponent_shooting.get("Shots On Target Opp", 0)
@@ -974,6 +975,7 @@ else:
     opp_inside_box = opponent_shooting.get("Inside the Box Opp", 0)
     opp_outside_box = opponent_shooting.get("Outside the Box Opp", 0)
     opp_big_chances = opponent_shooting.get("Big Chances Opp", 0)
+    opp_gk_saves = opponent_shooting.get("GK Saves Opp", 0)
 
     opponent_label = selected_match_meta["opponent"] if not is_all_games_team else "Opponents"
 
@@ -1008,6 +1010,7 @@ else:
         comparison_row("Inside the Box", team_inside_box, opp_inside_box),
         comparison_row("Outside the Box", team_outside_box, opp_outside_box),
         comparison_row("Big Chances", team_big_chances, opp_big_chances),
+        comparison_row("GK Saves", team_gk_saves, opp_gk_saves),
     ])
 
     st.markdown(

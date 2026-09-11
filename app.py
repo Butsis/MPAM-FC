@@ -865,6 +865,7 @@ else:
                 "Inside the Box Opp",
                 "Outside the Box Opp",
                 "Big Chances Opp",
+                "GK Saves Opp",
             ] if c in opponent_subset.columns]
         ].sum()
     else:

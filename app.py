@@ -1082,8 +1082,8 @@ else:
     # ----------------------------------------------------------------------------
     st.markdown('<div class="section-title">✨ Creativity</div>', unsafe_allow_html=True)
     stat_table([
-        ("Big Chances", fmt(trow["Big Chances"])),
         ("Big Chances Created", fmt(trow["Created"])),
+        ("Key Passes", fmt(p2row["KEY PASSES"])),
     ])
 
     # ----------------------------------------------------------------------------

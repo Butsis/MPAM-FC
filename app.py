@@ -139,7 +139,7 @@ st.markdown(
     }}
 
     section[data-testid="stSidebar"] {{
-        background-color: #111111;
+        background-color: #111111 !important;
         border-right: 1px solid {ORANGE_DARK};
     }}
     .sidebar-logo {{
@@ -149,6 +149,51 @@ st.markdown(
     }}
     .sidebar-logo img {{
         height: 60px;
+    }}
+
+    /* ------------------------------------------------------------------
+       Force dark styling on Streamlit's own native widgets, regardless
+       of whether the user's browser/system or the Settings menu has
+       Light mode selected. Our CSS above only covers elements we built
+       ourselves (tables, cards); without this, switching to Light makes
+       dropdowns, inputs, and the sidebar chrome render with Streamlit's
+       default light colors, clashing with everything else.
+       ------------------------------------------------------------------ */
+    .stApp, [data-testid="stAppViewContainer"], [data-testid="stHeader"] {{
+        background-color: {BLACK} !important;
+    }}
+    :where(.stApp, .stApp p, .stApp span, .stApp label, .stApp div) {{
+        color: #e5e5e5;
+    }}
+    [data-baseweb="select"] > div {{
+        background-color: {CARD} !important;
+        color: #e5e5e5 !important;
+        border-color: #2a2a2a !important;
+    }}
+    [data-baseweb="popover"], [data-baseweb="menu"] {{
+        background-color: {CARD} !important;
+    }}
+    li[role="option"] {{
+        background-color: {CARD} !important;
+        color: #e5e5e5 !important;
+    }}
+    li[role="option"]:hover {{
+        background-color: #2a2a2a !important;
+    }}
+    [data-baseweb="input"] input, [data-baseweb="base-input"] input {{
+        background-color: {CARD} !important;
+        color: #e5e5e5 !important;
+    }}
+    [data-testid="stRadio"] label, [data-baseweb="radio"] label {{
+        color: #e5e5e5 !important;
+    }}
+    [data-testid="stDataFrame"] {{
+        background-color: {CARD} !important;
+    }}
+    button {{
+        background-color: {CARD} !important;
+        color: #e5e5e5 !important;
+        border-color: #2a2a2a !important;
     }}
     </style>
     """,

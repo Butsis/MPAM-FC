@@ -676,6 +676,8 @@ if view_mode == "Player Stats":
             ("Big Chances Scored", fmt(row["BIG CHANCES SCORED"])),
             ("Big Chances Missed", fmt(row["BIG CHANCES MISSED"])),
         ]
+        if row["BIG CHANCES SAVED"] > 0:
+            big_chance_rows.append(("Big Chances Saved", fmt(row["BIG CHANCES SAVED"])))
         if row["PENALTY SCORED"] > 0:
             big_chance_rows.append(("Penalty Scored", fmt(row["PENALTY SCORED"])))
         if row["PENALTY MISSED"] > 0:

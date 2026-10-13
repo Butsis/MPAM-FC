@@ -575,15 +575,19 @@ def gps_diff(this_val, avg_val):
 
 
 def gps_compare_table(rows, with_avg=True):
-    """rows: list of (label, this_val, avg_val, formatter)."""
+    """rows: list of (label, this_val, avg_val, formatter[, compare]).
+    compare=False makes an info-only row (no Season Avg / +/-)."""
     if with_avg:
         header = "<tr><th></th><th>This Match</th><th>Season Avg</th><th>+/-</th></tr>"
     else:
         header = "<tr><th></th><th>This Match</th></tr>"
     body = ""
-    for label, this_val, avg_val, f in rows:
+    for label, this_val, avg_val, f, *opts in rows:
+        compare = opts[0] if opts else True
         body += f'<tr><td>{label}</td><td style="color:#e5e5e5;">{f(this_val)}</td>'
-        if with_avg:
+        if with_avg and not compare:
+            body += "<td></td><td></td>"
+        elif with_avg:
             diff_text, color = gps_diff(this_val, avg_val)
             body += (
                 f'<td style="color:#a3a3a3;">{f(avg_val)}</td>'
@@ -609,6 +613,9 @@ _total_rows = []
 for _mid, _g in gps_full.groupby("__match_id"):
     _speeds = _g["Max Speed"]
     _fastest = _g.loc[_speeds.idxmax(), "NAME"] if _speeds.notna().any() else ""
+    # Team-wide sprint level: average of each player's max speed, excluding
+    # short cameos so a 10' sub doesn't drag it down.
+    _avg_max = _g.loc[_g["MINUTES"] >= GPS_MIN_MINUTES, "Max Speed"].mean()
     _total_rows.append({
         "__match_id": _mid,
         "__matchup": _g["__matchup"].iloc[0],
@@ -617,10 +624,11 @@ for _mid, _g in gps_full.groupby("__match_id"):
         "Total Dist Speed": _g["Dist Speed 20-25"].sum(),
         "Top Speed": _speeds.max(),
         "Top Speed Player": _fastest,
+        "Avg Max Speed": _avg_max,
     })
 gps_match_totals = pd.DataFrame(
     _total_rows,
-    columns=["__match_id", "__matchup", "__date", "Total Distance", "Total Dist Speed", "Top Speed", "Top Speed Player"],
+    columns=["__match_id", "__matchup", "__date", "Total Distance", "Total Dist Speed", "Top Speed", "Top Speed Player", "Avg Max Speed"],
 ).set_index("__match_id")
 
 
@@ -1354,16 +1362,15 @@ else:
             this = gps_match_totals.loc[selected_match_id]
             others = gps_match_totals.drop(index=selected_match_id)
             with_avg = len(others) >= GPS_MIN_OTHER_MATCHES
-            # Fastest player's name sits under the Top Speed label, in the table itself.
-            top_speed_label = "Top Speed (km/h)"
-            if this["Top Speed Player"]:
-                top_speed_label += (
-                    f'<br><span style="font-size:0.8rem; color:{ORANGE};">⚡ {this["Top Speed Player"]}</span>'
-                )
+            fastest_text = (
+                f'⚡ {this["Top Speed Player"]} · {fmt_kmh(this["Top Speed"])} km/h'
+                if this["Top Speed Player"] else "—"
+            )
             gps_compare_table([
                 ("Total Distance (meters)", this["Total Distance"], others["Total Distance"].mean(), fmt_m),
                 ("Total Dist. Speed 20→25 (km/h)", this["Total Dist Speed"], others["Total Dist Speed"].mean(), fmt_m),
-                (top_speed_label, this["Top Speed"], others["Top Speed"].mean(), fmt_kmh),
+                ("Average Max Speed (km/h)", this["Avg Max Speed"], others["Avg Max Speed"].mean(), fmt_kmh),
+                ("Fastest Player", fastest_text, None, str, False),
             ], with_avg=with_avg)
     else:
         n_gps = len(gps_match_totals)
@@ -1374,7 +1381,8 @@ else:
         stat_table([
             ("Avg Total Distance per Match (meters)", fmt_m(gps_match_totals["Total Distance"].mean())),
             ("Avg Total Dist. Speed 20→25 per Match (km/h)", fmt_m(gps_match_totals["Total Dist Speed"].mean())),
-            ("Top Speed of the Season (km/h)", f"{fmt_kmh(top_val)} · {top_name}" if top_name else fmt_kmh(top_val)),
+            ("Average Max Speed (km/h)", fmt_kmh(gps_match_totals["Avg Max Speed"].mean())),
+            ("Fastest Player of the Season", f"⚡ {top_name} · {fmt_kmh(top_val)} km/h" if top_name else "—"),
         ])
         hist = gps_match_totals.sort_values("__date", ascending=False)
         st.dataframe(
@@ -1382,7 +1390,7 @@ else:
                 "Match": hist["__matchup"],
                 "Total Distance (m)": hist["Total Distance"].map(fmt_m),
                 "Dist. 20→25 (m)": hist["Total Dist Speed"].map(fmt_m),
-                "Top Speed": hist["Top Speed"].map(fmt_kmh),
+                "Avg Max Speed": hist["Avg Max Speed"].map(fmt_kmh),
             }),
             hide_index=True,
             width="stretch",

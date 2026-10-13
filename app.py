@@ -278,6 +278,7 @@ def load_all_matches(fingerprint):
     opponent_rows = []
     gps_frames = []
     gps_team_rows = []
+    gps_unmatched = []
     match_meta = []
     skipped = []
 
@@ -365,65 +366,64 @@ def load_all_matches(fingerprint):
             opponent_row["__date"] = date_val
             opponent_rows.append(opponent_row)
 
-        # GPS data, from Sheet4 (pasted per-half; "Team Average 1st/2nd Half"
-        # and "Overall" are marker rows, not players). Older matches may not
-        # have this sheet at all — that's fine, they just get no GPS rows.
+        # GPS data, from Sheet4 (full-match totals only). Layout:
+        #   Player | Distance | Max Speed | Dist. Speed 20 → 25 (km/h)
+        # One "Team Average" row, then one row per player. Distances are in
+        # meters. Matches without GPS (missing or empty Sheet4) are fine —
+        # they just get no GPS rows and show "No GPS data available".
         if not sheet4.empty and sheet4.shape[1] >= 4:
-            sheet4 = sheet4.copy()
-            sheet4.columns = ["Player", "Distance", "Max Speed", "Dist Speed 20-25"] + list(sheet4.columns[4:])
-            team_gps = {"__match_id": game_id, "__matchup": matchup, "__date": date_val}
-            current_half = None
+            sheet4 = sheet4.iloc[:, :4].copy()
+            sheet4.columns = ["Player", "Distance", "Max Speed", "Dist Speed 20-25"]
+            sheet4 = sheet4[sheet4["Player"].notna()]
+            sheet2_names = set(sheet2["NAME"].astype(str).str.strip())
             for _, r in sheet4.iterrows():
                 name = str(r["Player"]).strip()
-                if name == "Team Average 1st Half":
-                    team_gps["T1_Distance"] = r["Distance"]
-                    team_gps["T1_MaxSpeed"] = r["Max Speed"]
-                    team_gps["T1_DistSpeed"] = r["Dist Speed 20-25"]
-                    current_half = "1st"
+                if not name:
                     continue
-                if name == "Team Average 2nd Half":
-                    team_gps["T2_Distance"] = r["Distance"]
-                    team_gps["T2_MaxSpeed"] = r["Max Speed"]
-                    team_gps["T2_DistSpeed"] = r["Dist Speed 20-25"]
-                    current_half = "2nd"
-                    continue
-                if name == "Overall":
-                    team_gps["Overall_Distance"] = r["Distance"]
-                    team_gps["Overall_MaxSpeed"] = r["Max Speed"]
-                    team_gps["Overall_DistSpeed"] = r["Dist Speed 20-25"]
-                    current_half = None
-                    continue
-                if current_half is not None and name and name.lower() != "nan":
-                    gps_frames.append({
-                        "NAME": name,
-                        "Half": current_half,
-                        "Distance": pd.to_numeric(r["Distance"], errors="coerce") or 0,
-                        "Max Speed": pd.to_numeric(r["Max Speed"], errors="coerce") or 0,
-                        "Dist Speed 20-25": pd.to_numeric(r["Dist Speed 20-25"], errors="coerce") or 0,
+                distance = pd.to_numeric(r["Distance"], errors="coerce")
+                max_speed = pd.to_numeric(r["Max Speed"], errors="coerce")
+                dist_speed = pd.to_numeric(r["Dist Speed 20-25"], errors="coerce")
+                if name.lower() == "team average":
+                    gps_team_rows.append({
+                        "Team_Distance": distance,
+                        "Team_MaxSpeed": max_speed,
+                        "Team_DistSpeed": dist_speed,
                         "__match_id": game_id,
                         "__matchup": matchup,
                         "__date": date_val,
                     })
-            if len(team_gps) > 3:  # more than just the __match_id/__matchup/__date keys
-                gps_team_rows.append(team_gps)
+                    continue
+                if name not in sheet2_names:
+                    # Spelling differs from Sheet2 — GPS can't attach to a
+                    # player card. Surfaced in the sidebar so it gets fixed.
+                    gps_unmatched.append(f"{name} ({matchup})")
+                gps_frames.append({
+                    "NAME": name,
+                    "Distance": distance,
+                    "Max Speed": max_speed,
+                    "Dist Speed 20-25": dist_speed,
+                    "__match_id": game_id,
+                    "__matchup": matchup,
+                    "__date": date_val,
+                })
 
     if not player_frames:
-        return pd.DataFrame(), pd.DataFrame(), pd.DataFrame(), pd.DataFrame(), pd.DataFrame(), [], skipped
+        return pd.DataFrame(), pd.DataFrame(), pd.DataFrame(), pd.DataFrame(), pd.DataFrame(), [], skipped, []
 
     combined = pd.concat(player_frames, ignore_index=True)
     team_df = pd.DataFrame(team_rows).reset_index(drop=True)
     opponent_df = pd.DataFrame(opponent_rows).reset_index(drop=True)
     gps_df = pd.DataFrame(gps_frames) if gps_frames else pd.DataFrame(
-        columns=["NAME", "Half", "Distance", "Max Speed", "Dist Speed 20-25", "__match_id", "__matchup", "__date"]
+        columns=["NAME", "Distance", "Max Speed", "Dist Speed 20-25", "__match_id", "__matchup", "__date"]
     )
     gps_team_df = pd.DataFrame(gps_team_rows) if gps_team_rows else pd.DataFrame(
-        columns=["__match_id", "__matchup", "__date"]
+        columns=["Team_Distance", "Team_MaxSpeed", "Team_DistSpeed", "__match_id", "__matchup", "__date"]
     )
     match_meta.sort(key=lambda m: m["date"] if m["date"] is not None else pd.Timestamp.min, reverse=True)
-    return combined, team_df, opponent_df, gps_df, gps_team_df, match_meta, skipped
+    return combined, team_df, opponent_df, gps_df, gps_team_df, match_meta, skipped, gps_unmatched
 
 
-combined_df, team_df, opponent_df, gps_df, gps_team_df, matches, skipped_files = load_all_matches(_files_fingerprint())
+combined_df, team_df, opponent_df, gps_df, gps_team_df, matches, skipped_files, gps_unmatched = load_all_matches(_files_fingerprint())
 
 if combined_df.empty:
     st.error("No match files found. Add at least one .xlsx match export to this app's folder.")
@@ -510,6 +510,11 @@ else:
 
 if skipped_files:
     st.sidebar.caption(f"⚠️ Skipped unreadable files: {', '.join(skipped_files)}")
+
+if gps_unmatched:
+    st.sidebar.caption(
+        "⚠️ GPS names not found in Sheet2 (check spelling): " + ", ".join(gps_unmatched)
+    )
 
 st.sidebar.markdown("---")
 st.sidebar.caption("Open this app on your phone and bookmark it for quick access after every match.")
@@ -653,7 +658,7 @@ if view_mode == "Player Stats":
             "Goals": player_history["GOAL"].astype(int),
             "Assists": player_history["ASSISTS"].astype(int),
         })
-        st.dataframe(breakdown, hide_index=True, use_container_width=True)
+        st.dataframe(breakdown, hide_index=True, width="stretch")
 
     def render_duels():
         st.markdown('<div class="section-title">🥊 Duels</div>', unsafe_allow_html=True)
@@ -835,30 +840,49 @@ if view_mode == "Player Stats":
     if player_gps.empty:
         st.caption("No GPS data available.")
     else:
-        gps_half1 = player_gps[player_gps["Half"] == "1st"]
-        gps_half2 = player_gps[player_gps["Half"] == "2nd"]
+        # Team Average rows for the same matches this player has GPS data in,
+        # so the comparison is like-for-like.
+        team_gps_same = gps_team_df[gps_team_df["__match_id"].isin(player_gps["__match_id"])]
 
-        h1_distance = gps_half1["Distance"].sum() if not gps_half1.empty else None
-        h1_maxspeed = gps_half1["Max Speed"].max() if not gps_half1.empty else None
-        h1_distspeed = gps_half1["Dist Speed 20-25"].sum() if not gps_half1.empty else None
+        def gps_compare_row(label, player_val, team_val):
+            """Player value is highlighted orange when above the Team Average."""
+            above = pd.notna(player_val) and pd.notna(team_val) and player_val > team_val
+            player_style = f"font-weight:700; color:{ORANGE};" if above else "color:#e5e5e5;"
+            return (
+                f"<tr><td>{label}</td>"
+                f'<td style="{player_style}">{fmt1(player_val)}</td>'
+                f'<td style="color:#e5e5e5;">{fmt1(team_val)}</td></tr>'
+            )
 
-        h2_distance = gps_half2["Distance"].sum() if not gps_half2.empty else None
-        h2_maxspeed = gps_half2["Max Speed"].max() if not gps_half2.empty else None
-        h2_distspeed = gps_half2["Dist Speed 20-25"].sum() if not gps_half2.empty else None
+        if not is_all_games:
+            p = player_gps.iloc[0]
+            t = team_gps_same.iloc[0] if not team_gps_same.empty else None
+            rows = [
+                ("Distance (meters)", p["Distance"], t["Team_Distance"] if t is not None else None),
+                ("Max Speed (km/h)", p["Max Speed"], t["Team_MaxSpeed"] if t is not None else None),
+                ("Dist. Speed 20→25 (km/h)", p["Dist Speed 20-25"], t["Team_DistSpeed"] if t is not None else None),
+            ]
+        else:
+            rows = [
+                ("Avg Distance per Match (meters)", player_gps["Distance"].mean(),
+                 team_gps_same["Team_Distance"].mean() if not team_gps_same.empty else None),
+                ("Best Max Speed (km/h)", player_gps["Max Speed"].max(),
+                 team_gps_same["Team_MaxSpeed"].mean() if not team_gps_same.empty else None),
+                ("Avg Dist. Speed 20→25 per Match (km/h)", player_gps["Dist Speed 20-25"].mean(),
+                 team_gps_same["Team_DistSpeed"].mean() if not team_gps_same.empty else None),
+            ]
 
-        total_distance = player_gps["Distance"].sum()
-        total_maxspeed = player_gps["Max Speed"].max()
-        total_distspeed = player_gps["Dist Speed 20-25"].sum()
-
-        total_label = "Total" if not is_all_games else "Season Total"
-        multi_col_table(
-            ["", "1st Half", "2nd Half", total_label],
-            [
-                ("Distance (meters)", fmt1(h1_distance), fmt1(h2_distance), fmt1(total_distance)),
-                ("Max Speed (km/h)", fmt1(h1_maxspeed), fmt1(h2_maxspeed), fmt1(total_maxspeed)),
-                ("Dist. Speed 20→25 (km/h)", fmt1(h1_distspeed), fmt1(h2_distspeed), fmt1(total_distspeed)),
-            ],
+        rows_html = "".join(gps_compare_row(label, pv, tv) for label, pv, tv in rows)
+        st.markdown(
+            f'<table class="compare-table"><tr><th></th><th>{selected_player}</th><th>Team Average</th></tr>{rows_html}</table>',
+            unsafe_allow_html=True,
         )
+        if is_all_games:
+            n_gps = player_gps["__match_id"].nunique()
+            st.caption(
+                f"Based on {n_gps} match{'es' if n_gps != 1 else ''} with GPS data. "
+                "Max Speed shows his best of the season; Team Average is the average across those same matches."
+            )
 
     st.markdown("---")
     st.caption("MPAM FC · Player Review Dashboard")
@@ -997,7 +1021,7 @@ else:
             "GF": team_history["Goals Scored"].astype(int),
             "GA": team_history["Goals Conceded"].astype(int),
         })
-        st.dataframe(team_breakdown, hide_index=True, use_container_width=True)
+        st.dataframe(team_breakdown, hide_index=True, width="stretch")
 
     # ----------------------------------------------------------------------------
     # Shooting comparison — our shooting vs opponent shooting from Sheet3
@@ -1239,28 +1263,17 @@ else:
     else:
         team_gps_scope = gps_team_df[gps_team_df["__match_id"] == selected_match_id]
 
-    if team_gps_scope.empty or "T1_Distance" not in team_gps_scope.columns:
+    if team_gps_scope.empty:
         st.caption("No GPS data available.")
     else:
-        t1_distance = team_gps_scope["T1_Distance"].mean()
-        t1_maxspeed = team_gps_scope["T1_MaxSpeed"].mean()
-        t1_distspeed = team_gps_scope["T1_DistSpeed"].mean()
-        t2_distance = team_gps_scope["T2_Distance"].mean()
-        t2_maxspeed = team_gps_scope["T2_MaxSpeed"].mean()
-        t2_distspeed = team_gps_scope["T2_DistSpeed"].mean()
-        overall_distance = team_gps_scope["Overall_Distance"].mean()
-        overall_maxspeed = team_gps_scope["Overall_MaxSpeed"].mean()
-        overall_distspeed = team_gps_scope["Overall_DistSpeed"].mean()
-
-        overall_label = "Overall" if not is_all_games_team else "Season Avg"
-        multi_col_table(
-            ["", "1st Half", "2nd Half", overall_label],
-            [
-                ("Average Distance (meters)", fmt1(t1_distance), fmt1(t2_distance), fmt1(overall_distance)),
-                ("Average Max Speed (km/h)", fmt1(t1_maxspeed), fmt1(t2_maxspeed), fmt1(overall_maxspeed)),
-                ("Average Dist. Speed 20→25 (km/h)", fmt1(t1_distspeed), fmt1(t2_distspeed), fmt1(overall_distspeed)),
-            ],
-        )
+        stat_table([
+            ("Average Distance (meters)", fmt1(team_gps_scope["Team_Distance"].mean())),
+            ("Average Max Speed (km/h)", fmt1(team_gps_scope["Team_MaxSpeed"].mean())),
+            ("Average Dist. Speed 20→25 (km/h)", fmt1(team_gps_scope["Team_DistSpeed"].mean())),
+        ])
+        if is_all_games_team:
+            n_gps = team_gps_scope["__match_id"].nunique()
+            st.caption(f"Average across {n_gps} match{'es' if n_gps != 1 else ''} with GPS data.")
 
     st.markdown("---")
     st.caption("MPAM FC · Team Review Dashboard")

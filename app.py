@@ -539,22 +539,89 @@ def fmt(n):
     return f"{int(n)}" if float(n).is_integer() else f"{n}"
 
 
-def fmt1(n):
-    """1-decimal formatting for GPS metrics (distance/speed), '—' for missing values."""
-    if n is None or (isinstance(n, float) and pd.isna(n)):
-        return "—"
-    return f"{n:.1f}"
+# ----------------------------------------------------------------------------
+# GPS comparison: each match vs the average of all OTHER matches
+# ----------------------------------------------------------------------------
+GPS_MIN_MINUTES = 20        # shorter appearances get no per-90 numbers (too noisy)
+GPS_MIN_OTHER_MATCHES = 2   # need at least this many other matches before comparing
+GPS_NEUTRAL_BAND = 3        # within ±3% of the average counts as "normal" (gray)
 
 
-def multi_col_table(headers, rows):
-    """headers: list of column labels (first is blank for the row-label column).
-    rows: list of (label, val1, val2, ...) tuples, one per stat row."""
-    header_html = "".join(f"<th>{h}</th>" for h in headers)
-    rows_html = "".join(
-        "<tr><td>" + row[0] + "</td>" + "".join(f"<td>{v}</td>" for v in row[1:]) + "</tr>"
-        for row in rows
-    )
-    st.markdown(f'<table class="compare-table"><tr>{header_html}</tr>{rows_html}</table>', unsafe_allow_html=True)
+def fmt_m(v):
+    """Meters, whole numbers with thousands separator."""
+    return "—" if v is None or pd.isna(v) else f"{v:,.0f}"
+
+
+def fmt_kmh(v):
+    """Speed, 1 decimal."""
+    return "—" if v is None or pd.isna(v) else f"{v:.1f}"
+
+
+def gps_diff(this_val, avg_val):
+    """Percent difference vs average, plus a color: orange above, red below,
+    gray when within the neutral band. Color and text use the same rounded
+    number, so they always agree."""
+    if this_val is None or avg_val is None or pd.isna(this_val) or pd.isna(avg_val) or avg_val == 0:
+        return "—", "#9ca3af"
+    change = round((this_val - avg_val) / avg_val * 100)
+    if change > GPS_NEUTRAL_BAND:
+        color = ORANGE
+    elif change < -GPS_NEUTRAL_BAND:
+        color = "#ef4444"
+    else:
+        color = "#9ca3af"
+    sign = "+" if change > 0 else "−" if change < 0 else ""
+    return f"{sign}{abs(change)}%", color
+
+
+def gps_compare_table(rows, with_avg=True):
+    """rows: list of (label, this_val, avg_val, formatter)."""
+    if with_avg:
+        header = "<tr><th></th><th>This Match</th><th>Season Avg</th><th>+/-</th></tr>"
+    else:
+        header = "<tr><th></th><th>This Match</th></tr>"
+    body = ""
+    for label, this_val, avg_val, f in rows:
+        body += f'<tr><td>{label}</td><td style="color:#e5e5e5;">{f(this_val)}</td>'
+        if with_avg:
+            diff_text, color = gps_diff(this_val, avg_val)
+            body += (
+                f'<td style="color:#a3a3a3;">{f(avg_val)}</td>'
+                f'<td style="font-weight:700; color:{color};">{diff_text}</td>'
+            )
+        body += "</tr>"
+    st.markdown(f'<table class="compare-table">{header}{body}</table>', unsafe_allow_html=True)
+
+
+# Player GPS rows + minutes played (from Sheet2), so we can scale to per 90.
+gps_full = gps_df.merge(
+    combined_df[["NAME", "__match_id", "MINUTES"]],
+    on=["NAME", "__match_id"], how="left",
+)
+gps_full["MINUTES"] = pd.to_numeric(gps_full["MINUTES"], errors="coerce").fillna(0)
+_qualifies = gps_full["MINUTES"] >= GPS_MIN_MINUTES
+_safe_minutes = gps_full["MINUTES"].where(gps_full["MINUTES"] > 0)
+gps_full["Distance p90"] = (gps_full["Distance"] / _safe_minutes * 90).where(_qualifies)
+gps_full["Dist Speed p90"] = (gps_full["Dist Speed 20-25"] / _safe_minutes * 90).where(_qualifies)
+
+# Team totals per match (sum of every player), plus the fastest player.
+_total_rows = []
+for _mid, _g in gps_full.groupby("__match_id"):
+    _speeds = _g["Max Speed"]
+    _fastest = _g.loc[_speeds.idxmax(), "NAME"] if _speeds.notna().any() else ""
+    _total_rows.append({
+        "__match_id": _mid,
+        "__matchup": _g["__matchup"].iloc[0],
+        "__date": _g["__date"].iloc[0],
+        "Total Distance": _g["Distance"].sum(),
+        "Total Dist Speed": _g["Dist Speed 20-25"].sum(),
+        "Top Speed": _speeds.max(),
+        "Top Speed Player": _fastest,
+    })
+gps_match_totals = pd.DataFrame(
+    _total_rows,
+    columns=["__match_id", "__matchup", "__date", "Total Distance", "Total Dist Speed", "Top Speed", "Top Speed Player"],
+).set_index("__match_id")
 
 
 if view_mode == "Player Stats":
@@ -833,55 +900,75 @@ if view_mode == "Player Stats":
     # GPS Metrics
     # --------------------------------------------------------------------------
     st.markdown('<div class="section-title">🏃 GPS Metrics</div>', unsafe_allow_html=True)
-    player_gps = gps_df[gps_df["NAME"] == selected_player]
+    player_gps_all = gps_full[gps_full["NAME"] == selected_player]
+
     if not is_all_games:
-        player_gps = player_gps[player_gps["__match_id"] == selected_match_id]
-
-    if player_gps.empty:
-        st.caption("No GPS data available.")
-    else:
-        # Team Average rows for the same matches this player has GPS data in,
-        # so the comparison is like-for-like.
-        team_gps_same = gps_team_df[gps_team_df["__match_id"].isin(player_gps["__match_id"])]
-
-        def gps_compare_row(label, player_val, team_val):
-            """Player value is highlighted orange when above the Team Average."""
-            above = pd.notna(player_val) and pd.notna(team_val) and player_val > team_val
-            player_style = f"font-weight:700; color:{ORANGE};" if above else "color:#e5e5e5;"
-            return (
-                f"<tr><td>{label}</td>"
-                f'<td style="{player_style}">{fmt1(player_val)}</td>'
-                f'<td style="color:#e5e5e5;">{fmt1(team_val)}</td></tr>'
-            )
-
-        if not is_all_games:
-            p = player_gps.iloc[0]
-            t = team_gps_same.iloc[0] if not team_gps_same.empty else None
-            rows = [
-                ("Distance (meters)", p["Distance"], t["Team_Distance"] if t is not None else None),
-                ("Max Speed (km/h)", p["Max Speed"], t["Team_MaxSpeed"] if t is not None else None),
-                ("Dist. Speed 20→25 (km/h)", p["Dist Speed 20-25"], t["Team_DistSpeed"] if t is not None else None),
-            ]
+        this_rows = player_gps_all[player_gps_all["__match_id"] == selected_match_id]
+        if this_rows.empty:
+            st.caption("No GPS data available.")
         else:
-            rows = [
-                ("Avg Distance per Match (meters)", player_gps["Distance"].mean(),
-                 team_gps_same["Team_Distance"].mean() if not team_gps_same.empty else None),
-                ("Best Max Speed (km/h)", player_gps["Max Speed"].max(),
-                 team_gps_same["Team_MaxSpeed"].mean() if not team_gps_same.empty else None),
-                ("Avg Dist. Speed 20→25 per Match (km/h)", player_gps["Dist Speed 20-25"].mean(),
-                 team_gps_same["Team_DistSpeed"].mean() if not team_gps_same.empty else None),
-            ]
-
-        rows_html = "".join(gps_compare_row(label, pv, tv) for label, pv, tv in rows)
-        st.markdown(
-            f'<table class="compare-table"><tr><th></th><th>{selected_player}</th><th>Team Average</th></tr>{rows_html}</table>',
-            unsafe_allow_html=True,
-        )
-        if is_all_games:
-            n_gps = player_gps["__match_id"].nunique()
+            this = this_rows.iloc[0]
+            mins = this["MINUTES"]
+            st.caption(f"⏱️ {fmt(mins)}' played · {fmt_m(this['Distance'])} m covered")
+            if mins < GPS_MIN_MINUTES:
+                # Short cameo: per-90 would be wildly inflated, so raw numbers only.
+                gps_compare_table([
+                    ("Distance (meters)", this["Distance"], None, fmt_m),
+                    ("Dist. Speed 20→25 (km/h)", this["Dist Speed 20-25"], None, fmt_m),
+                    ("Max Speed (km/h)", this["Max Speed"], None, fmt_kmh),
+                ], with_avg=False)
+                st.caption(f"Short appearance (under {GPS_MIN_MINUTES}') — no per-90 comparison for this match.")
+            else:
+                # His other matches with enough minutes = his personal season baseline.
+                others = player_gps_all[
+                    (player_gps_all["__match_id"] != selected_match_id)
+                    & (player_gps_all["MINUTES"] >= GPS_MIN_MINUTES)
+                ]
+                with_avg = len(others) >= GPS_MIN_OTHER_MATCHES
+                gps_compare_table([
+                    ("Distance per 90 (meters)", this["Distance p90"], others["Distance p90"].mean(), fmt_m),
+                    ("Dist. Speed 20→25 per 90 (km/h)", this["Dist Speed p90"], others["Dist Speed p90"].mean(), fmt_m),
+                    ("Max Speed (km/h)", this["Max Speed"], others["Max Speed"].mean(), fmt_kmh),
+                ], with_avg=with_avg)
+                if with_avg:
+                    st.caption(
+                        f"Season Avg = his other {len(others)} matches with {GPS_MIN_MINUTES}+ minutes. "
+                        "Per 90 scales to a full match, so starts and sub appearances compare fairly."
+                    )
+                else:
+                    st.caption(
+                        f"Season comparison appears once he has {GPS_MIN_OTHER_MATCHES} other matches "
+                        f"with {GPS_MIN_MINUTES}+ minutes."
+                    )
+    else:
+        if player_gps_all.empty:
+            st.caption("No GPS data available.")
+        else:
+            q = player_gps_all[player_gps_all["MINUTES"] >= GPS_MIN_MINUTES]
+            q_minutes = q["MINUTES"].sum()
+            d90 = q["Distance"].sum() / q_minutes * 90 if q_minutes > 0 else None
+            s90 = q["Dist Speed 20-25"].sum() / q_minutes * 90 if q_minutes > 0 else None
+            stat_table([
+                ("Distance per 90 (meters)", fmt_m(d90)),
+                ("Dist. Speed 20→25 per 90 (km/h)", fmt_m(s90)),
+                ("Best Max Speed (km/h)", fmt_kmh(player_gps_all["Max Speed"].max())),
+            ])
+            hist = player_gps_all.sort_values("__date", ascending=False)
+            st.dataframe(
+                pd.DataFrame({
+                    "Match": hist["__matchup"],
+                    "Min": hist["MINUTES"].map(fmt),
+                    "Distance (m)": hist["Distance"].map(fmt_m),
+                    "Per 90 (m)": hist["Distance p90"].map(fmt_m),
+                    "Max Speed": hist["Max Speed"].map(fmt_kmh),
+                }),
+                hide_index=True,
+                width="stretch",
+            )
+            n_gps = len(hist)
             st.caption(
                 f"Based on {n_gps} match{'es' if n_gps != 1 else ''} with GPS data. "
-                "Max Speed shows his best of the season; Team Average is the average across those same matches."
+                f"Per 90 uses appearances of {GPS_MIN_MINUTES}+ minutes."
             )
 
     st.markdown("---")
@@ -1258,22 +1345,51 @@ else:
     # GPS Metrics
     # ----------------------------------------------------------------------------
     st.markdown('<div class="section-title">🏃 GPS Metrics</div>', unsafe_allow_html=True)
-    if is_all_games_team:
-        team_gps_scope = gps_team_df
-    else:
-        team_gps_scope = gps_team_df[gps_team_df["__match_id"] == selected_match_id]
-
-    if team_gps_scope.empty:
+    if gps_match_totals.empty:
         st.caption("No GPS data available.")
+    elif not is_all_games_team:
+        if selected_match_id not in gps_match_totals.index:
+            st.caption("No GPS data available.")
+        else:
+            this = gps_match_totals.loc[selected_match_id]
+            others = gps_match_totals.drop(index=selected_match_id)
+            with_avg = len(others) >= GPS_MIN_OTHER_MATCHES
+            gps_compare_table([
+                ("Total Distance (meters)", this["Total Distance"], others["Total Distance"].mean(), fmt_m),
+                ("Total Dist. Speed 20→25 (km/h)", this["Total Dist Speed"], others["Total Dist Speed"].mean(), fmt_m),
+                ("Top Speed (km/h)", this["Top Speed"], others["Top Speed"].mean(), fmt_kmh),
+            ], with_avg=with_avg)
+            notes = []
+            if this["Top Speed Player"]:
+                notes.append(f"⚡ Fastest: {this['Top Speed Player']} ({fmt_kmh(this['Top Speed'])} km/h)")
+            if with_avg:
+                notes.append(f"Season Avg = the other {len(others)} matches with GPS data")
+            else:
+                notes.append(f"Season comparison appears once {GPS_MIN_OTHER_MATCHES + 1} matches have GPS data")
+            st.caption(" · ".join(notes))
     else:
+        n_gps = len(gps_match_totals)
+        top_val = gps_match_totals["Top Speed"].max()
+        top_name = ""
+        if gps_match_totals["Top Speed"].notna().any():
+            top_name = gps_match_totals.loc[gps_match_totals["Top Speed"].idxmax(), "Top Speed Player"]
         stat_table([
-            ("Average Distance (meters)", fmt1(team_gps_scope["Team_Distance"].mean())),
-            ("Average Max Speed (km/h)", fmt1(team_gps_scope["Team_MaxSpeed"].mean())),
-            ("Average Dist. Speed 20→25 (km/h)", fmt1(team_gps_scope["Team_DistSpeed"].mean())),
+            ("Avg Total Distance per Match (meters)", fmt_m(gps_match_totals["Total Distance"].mean())),
+            ("Avg Total Dist. Speed 20→25 per Match (km/h)", fmt_m(gps_match_totals["Total Dist Speed"].mean())),
+            ("Top Speed of the Season (km/h)", f"{fmt_kmh(top_val)} · {top_name}" if top_name else fmt_kmh(top_val)),
         ])
-        if is_all_games_team:
-            n_gps = team_gps_scope["__match_id"].nunique()
-            st.caption(f"Average across {n_gps} match{'es' if n_gps != 1 else ''} with GPS data.")
+        hist = gps_match_totals.sort_values("__date", ascending=False)
+        st.dataframe(
+            pd.DataFrame({
+                "Match": hist["__matchup"],
+                "Total Distance (m)": hist["Total Distance"].map(fmt_m),
+                "Dist. 20→25 (m)": hist["Total Dist Speed"].map(fmt_m),
+                "Top Speed": hist["Top Speed"].map(fmt_kmh),
+            }),
+            hide_index=True,
+            width="stretch",
+        )
+        st.caption(f"Based on {n_gps} match{'es' if n_gps != 1 else ''} with GPS data.")
 
     st.markdown("---")
     st.caption("MPAM FC · Team Review Dashboard")

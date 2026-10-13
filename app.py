@@ -1354,19 +1354,17 @@ else:
             this = gps_match_totals.loc[selected_match_id]
             others = gps_match_totals.drop(index=selected_match_id)
             with_avg = len(others) >= GPS_MIN_OTHER_MATCHES
+            # Fastest player's name sits under the Top Speed label, in the table itself.
+            top_speed_label = "Top Speed (km/h)"
+            if this["Top Speed Player"]:
+                top_speed_label += (
+                    f'<br><span style="font-size:0.8rem; color:{ORANGE};">⚡ {this["Top Speed Player"]}</span>'
+                )
             gps_compare_table([
                 ("Total Distance (meters)", this["Total Distance"], others["Total Distance"].mean(), fmt_m),
                 ("Total Dist. Speed 20→25 (km/h)", this["Total Dist Speed"], others["Total Dist Speed"].mean(), fmt_m),
-                ("Top Speed (km/h)", this["Top Speed"], others["Top Speed"].mean(), fmt_kmh),
+                (top_speed_label, this["Top Speed"], others["Top Speed"].mean(), fmt_kmh),
             ], with_avg=with_avg)
-            notes = []
-            if this["Top Speed Player"]:
-                notes.append(f"⚡ Fastest: {this['Top Speed Player']} ({fmt_kmh(this['Top Speed'])} km/h)")
-            if with_avg:
-                notes.append(f"Season Avg = the other {len(others)} matches with GPS data")
-            else:
-                notes.append(f"Season comparison appears once {GPS_MIN_OTHER_MATCHES + 1} matches have GPS data")
-            st.caption(" · ".join(notes))
     else:
         n_gps = len(gps_match_totals)
         top_val = gps_match_totals["Top Speed"].max()

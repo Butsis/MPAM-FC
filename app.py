@@ -1,6 +1,7 @@
 import glob
 import os
 import base64
+import unicodedata
 
 import streamlit as st
 import pandas as pd
@@ -209,10 +210,21 @@ def get_logo_base64():
 
 LOGO_B64 = get_logo_base64()
 
+def _normalize(text):
+    """Lowercase and strip Greek accents, so 'Νίκη' == 'Νικη' and 'Εντός' == 'Εντος'."""
+    text = unicodedata.normalize("NFD", str(text).strip().lower())
+    return "".join(ch for ch in text if unicodedata.category(ch) != "Mn")
+
+
+# Keys are accent-free lowercase, matched through _normalize().
 PLAYING_TYPE_LABELS = {
-    "Βασικος": "Starter",
-    "Αλλαγη": "Substitute",
+    "βασικος": "Starter",
+    "αλλαγη": "Substitute",
 }
+
+
+def playing_type_label(raw):
+    return PLAYING_TYPE_LABELS.get(_normalize(raw), str(raw))
 
 POSITION_LABELS = {
     "GK": "Goalkeeper",
@@ -252,10 +264,14 @@ TEAM_NON_STAT_COLS = [
 ]
 
 OUTCOME_LABELS = {
-    "Νικη": "Win",
-    "Ισοπαλια": "Draw",
-    "Ηττα": "Loss",
+    "νικη": "Win",
+    "ισοπαλια": "Draw",
+    "ηττα": "Loss",
 }
+
+
+def outcome_label(raw):
+    return OUTCOME_LABELS.get(_normalize(raw), str(raw))
 
 # ----------------------------------------------------------------------------
 # Discover every match workbook sitting next to this app, and load them all
@@ -311,14 +327,17 @@ def load_all_matches(fingerprint):
             if col not in text_cols:
                 sheet2[col] = pd.to_numeric(sheet2[col], errors="coerce").fillna(0)
 
-        game_id = sheet2["Game ID"].iloc[0] if "Game ID" in sheet2.columns else f
+        # Internal match key = the file name, which is always unique. (Using the
+        # sheet's Game ID would silently merge two matches if a file is copied
+        # from a template and the Game ID isn't updated.)
+        game_id = f
         opponent = str(sheet2["Opponent"].iloc[0]) if "Opponent" in sheet2.columns else "Unknown"
         competition = str(sheet2["Competition"].iloc[0]) if "Competition" in sheet2.columns else ""
 
         location_raw = ""
         if "Location" in sheet1.columns and sheet1["Location"].notna().any():
             location_raw = str(sheet1["Location"].dropna().iloc[0]).strip()
-        is_home = location_raw == "Εντος"
+        is_home = _normalize(location_raw) == "εντος"
 
         date_val = None
         if "Date" in sheet1.columns and sheet1["Date"].notna().any():
@@ -446,6 +465,34 @@ st.sidebar.markdown(
 # ---- View toggle ----
 st.sidebar.markdown("### 📊 View")
 view_mode = st.sidebar.radio("View", ["Team Stats", "Player Stats"], label_visibility="collapsed", key="view_mode")
+
+# ---- Competition filter ----
+# Narrows the WHOLE app to the chosen competition: the match list, the
+# All Games totals, and the season averages used in the GPS +/-% comparisons.
+COMPETITION_KEYWORDS = {"League": "πρωταθλημα", "Cup": "κυπελλο"}
+
+
+st.sidebar.markdown("### 🏆 Competition")
+competition_filter = st.sidebar.radio(
+    "Competition", ["All Games", "League", "Cup"],
+    horizontal=True, label_visibility="collapsed", key="competition_filter",
+)
+
+if competition_filter != "All Games":
+    _keyword = COMPETITION_KEYWORDS[competition_filter]
+    matches = [m for m in matches if _keyword in _normalize(m["competition"])]
+    if not matches:
+        st.info(f"No {competition_filter} matches yet.")
+        st.stop()
+    _allowed_ids = {m["match_id"] for m in matches}
+    combined_df = combined_df[combined_df["__match_id"].isin(_allowed_ids)]
+    team_df = team_df[team_df["__match_id"].isin(_allowed_ids)]
+    opponent_df = opponent_df[opponent_df["__match_id"].isin(_allowed_ids)] if not opponent_df.empty else opponent_df
+    gps_df = gps_df[gps_df["__match_id"].isin(_allowed_ids)]
+    gps_team_df = gps_team_df[gps_team_df["__match_id"].isin(_allowed_ids)]
+
+# Shown in the All Games headers, e.g. "3 League Matches"
+scope_word = f"{competition_filter} " if competition_filter != "All Games" else ""
 
 # ---- Match filter (searchable) ----
 st.sidebar.markdown("### 🗓️ Select Match")
@@ -670,7 +717,7 @@ if view_mode == "Player Stats":
     # ----------------------------------------------------------------------------
     if is_all_games:
         line1 = "All Games"
-        line2 = f"{len(matches)} Matches · Season Review"
+        line2 = f"{len(matches)} {scope_word}Match{'es' if len(matches) != 1 else ''} · Season Review"
     else:
         line1 = selected_match_meta["matchup"]
         line2 = f'{selected_match_meta["competition"]} · Player Review'
@@ -703,12 +750,12 @@ if view_mode == "Player Stats":
         ]
     else:
         playing_type_raw = str(row["Playing Type"]).strip()
-        playing_type_label = PLAYING_TYPE_LABELS.get(playing_type_raw, playing_type_raw)
+        started_label = playing_type_label(playing_type_raw)
         headline = [
             (c1, "Minutes", fmt(row["MINUTES"])),
             (c2, "Goals", fmt(row["GOAL"])),
             (c3, "Assists", fmt(row["ASSISTS"])),
-            (c4, "Playing Type", playing_type_label),
+            (c4, "Playing Type", started_label),
         ]
 
     for col, label, value in headline:
@@ -727,8 +774,8 @@ if view_mode == "Player Stats":
             "Date": player_history["__date"].dt.strftime("%d %b %Y"),
             "Match": player_history["__matchup"],
             "Competition": player_history["Competition"],
-            "Result": player_history["Outcome"],
-            "Started": player_history["Playing Type"].map(PLAYING_TYPE_LABELS).fillna(player_history["Playing Type"]),
+            "Result": player_history["Outcome"].map(outcome_label),
+            "Started": player_history["Playing Type"].map(playing_type_label),
             "Minutes": player_history["MINUTES"].astype(int),
             "Goals": player_history["GOAL"].astype(int),
             "Assists": player_history["ASSISTS"].astype(int),
@@ -1001,8 +1048,7 @@ if view_mode == "Player Stats":
             n_gps = len(hist)
             st.caption(
                 f"Based on {n_gps} match{'es' if n_gps != 1 else ''} with GPS data. "
-                f"+/-% = that match vs his average in his other matches ({GPS_MIN_MINUTES}+ min). "
-                "Orange above, red below, gray = normal (±3%)."
+                f"+/-% = that match vs his average in his other matches ({GPS_MIN_MINUTES}+ min)."
             )
 
     st.markdown("---")
@@ -1018,9 +1064,10 @@ else:
         team_stat_cols = [c for c in team_history.columns if c not in TEAM_NON_STAT_COLS]
         trow = team_history[team_stat_cols].sum()
         matches_played_team = team_history["__match_id"].nunique()
-        wins = int((team_history["Outcome"] == "Νικη").sum())
-        draws = int((team_history["Outcome"] == "Ισοπαλια").sum())
-        losses = int((team_history["Outcome"] == "Ηττα").sum())
+        _outcomes = team_history["Outcome"].map(outcome_label)
+        wins = int((_outcomes == "Win").sum())
+        draws = int((_outcomes == "Draw").sum())
+        losses = int((_outcomes == "Loss").sum())
         record = f"{wins}W-{draws}D-{losses}L"
     else:
         trow_df = team_df[team_df["__match_id"] == selected_match_id]
@@ -1068,7 +1115,7 @@ else:
     # ----------------------------------------------------------------------------
     if is_all_games_team:
         line1 = "All Games"
-        line2 = f"{len(matches)} Matches · Team Review"
+        line2 = f"{len(matches)} {scope_word}Match{'es' if len(matches) != 1 else ''} · Team Review"
     else:
         line1 = selected_match_meta["matchup"]
         line2 = f'{selected_match_meta["competition"]} · Team Review'
@@ -1102,10 +1149,10 @@ else:
             )
     else:
         outcome_raw = str(trow["Outcome"]).strip()
-        outcome_label = OUTCOME_LABELS.get(outcome_raw, outcome_raw)
+        result_label = outcome_label(outcome_raw)
 
         result_colors = {"Win": ORANGE, "Draw": "#9ca3af", "Loss": "#ef4444"}
-        result_color = result_colors.get(outcome_label, ORANGE)
+        result_color = result_colors.get(result_label, ORANGE)
 
         matchup_str = selected_match_meta["matchup"]
         team_left, team_right = [t.strip() for t in matchup_str.split(" vs ")]
@@ -1138,7 +1185,7 @@ else:
             "Date": team_history["__date"].dt.strftime("%d %b %Y"),
             "Match": team_history["__matchup"],
             "Competition": team_history["Competition"],
-            "Result": team_history["Outcome"].map(OUTCOME_LABELS).fillna(team_history["Outcome"]),
+            "Result": team_history["Outcome"].map(outcome_label),
             "GF": team_history["Goals Scored"].astype(int),
             "GA": team_history["Goals Conceded"].astype(int),
         })

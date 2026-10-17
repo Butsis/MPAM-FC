@@ -962,21 +962,47 @@ if view_mode == "Player Stats":
                 ("Best Max Speed (km/h)", fmt_kmh(player_gps_all["Max Speed"].max())),
             ])
             hist = player_gps_all.sort_values("__date", ascending=False)
+
+            # Match-by-match: each match vs his average in his OTHER matches
+            # (20+ min only), same rule as the single-match view. The +/-% sits
+            # inside the cell and the cell is colored orange/red/gray.
+            compared_cols = [
+                ("Distance per 90", "Distance p90", fmt_m),
+                ("Dist. Speed 20→25 per 90", "Dist Speed p90", fmt_m),
+                ("Max Speed", "Max Speed", fmt_kmh),
+            ]
+            display = pd.DataFrame({
+                "Match": hist["__matchup"].values,
+                "Min": hist["MINUTES"].map(fmt).values,
+                "Distance (m)": hist["Distance"].map(fmt_m).values,
+                "Distance per 90": "",
+                "Dist. Speed 20→25": hist["Dist Speed 20-25"].map(fmt_m).values,
+                "Dist. Speed 20→25 per 90": "",
+                "Max Speed": "",
+            })
+            colors = pd.DataFrame("", index=display.index, columns=display.columns)
+            for i, (_, r) in enumerate(hist.iterrows()):
+                others = q[q["__match_id"] != r["__match_id"]]
+                can_compare = (
+                    r["MINUTES"] >= GPS_MIN_MINUTES and len(others) >= GPS_MIN_OTHER_MATCHES
+                )
+                for col_name, src_col, f in compared_cols:
+                    text = f(r[src_col])
+                    if can_compare and pd.notna(r[src_col]):
+                        diff_text, color = gps_diff(r[src_col], others[src_col].mean())
+                        text = f"{text} ({diff_text})"
+                        colors.loc[i, col_name] = f"color: {color}; font-weight: 700;"
+                    display.loc[i, col_name] = text
             st.dataframe(
-                pd.DataFrame({
-                    "Match": hist["__matchup"],
-                    "Min": hist["MINUTES"].map(fmt),
-                    "Distance (m)": hist["Distance"].map(fmt_m),
-                    "Per 90 (m)": hist["Distance p90"].map(fmt_m),
-                    "Max Speed": hist["Max Speed"].map(fmt_kmh),
-                }),
+                display.style.apply(lambda _: colors, axis=None),
                 hide_index=True,
                 width="stretch",
             )
             n_gps = len(hist)
             st.caption(
                 f"Based on {n_gps} match{'es' if n_gps != 1 else ''} with GPS data. "
-                f"Per 90 uses appearances of {GPS_MIN_MINUTES}+ minutes."
+                f"+/-% = that match vs his average in his other matches ({GPS_MIN_MINUTES}+ min). "
+                "Orange above, red below, gray = normal (±3%)."
             )
 
     st.markdown("---")

@@ -1,6 +1,7 @@
 import glob
 import os
 import base64
+import html
 import unicodedata
 
 import streamlit as st
@@ -117,6 +118,9 @@ st.markdown(
     }}
     .compare-table tr:last-child td {{
         border-bottom: none;
+    }}
+    .data-table th, .data-table td {{
+        white-space: nowrap;
     }}
 
     .headline-card {{
@@ -300,16 +304,13 @@ def load_all_matches(fingerprint):
 
     for f in match_files:
         try:
-            sheet1 = pd.read_excel(f, sheet_name="Sheet1")
-            sheet2 = pd.read_excel(f, sheet_name="Sheet2")
-            try:
-                sheet3 = pd.read_excel(f, sheet_name="Sheet3")
-            except Exception:
-                sheet3 = pd.DataFrame()
-            try:
-                sheet4 = pd.read_excel(f, sheet_name="Sheet4")
-            except Exception:
-                sheet4 = pd.DataFrame()
+            # Open the workbook ONCE and parse each sheet from it (much faster
+            # than re-opening the file for every sheet).
+            with pd.ExcelFile(f) as xls:
+                sheet1 = xls.parse("Sheet1")
+                sheet2 = xls.parse("Sheet2")
+                sheet3 = xls.parse("Sheet3") if "Sheet3" in xls.sheet_names else pd.DataFrame()
+                sheet4 = xls.parse("Sheet4") if "Sheet4" in xls.sheet_names else pd.DataFrame()
         except Exception:
             skipped.append(f)
             continue
@@ -569,6 +570,25 @@ st.sidebar.caption("Open this app on your phone and bookmark it for quick access
 # ----------------------------------------------------------------------------
 # Helpers
 # ----------------------------------------------------------------------------
+def html_table(df, styles=None):
+    """Light HTML table (replaces st.dataframe's heavy interactive grid, which
+    is slow to load on phones). styles: same-shape DataFrame of inline CSS."""
+    head = "".join(f"<th>{html.escape(str(c))}</th>" for c in df.columns)
+    body = ""
+    for i in range(len(df)):
+        cells = ""
+        for j, c in enumerate(df.columns):
+            css = styles.iat[i, j] if styles is not None else ""
+            style_attr = f' style="{css}"' if css else ""
+            cells += f"<td{style_attr}>{html.escape(str(df.iat[i, j]))}</td>"
+        body += f"<tr>{cells}</tr>"
+    st.markdown(
+        f'<div style="overflow-x:auto;"><table class="compare-table data-table">'
+        f"<tr>{head}</tr>{body}</table></div>",
+        unsafe_allow_html=True,
+    )
+
+
 def stat_table(pairs):
     """pairs: list of (label, value) tuples"""
     rows_html = "".join(
@@ -780,7 +800,7 @@ if view_mode == "Player Stats":
             "Goals": player_history["GOAL"].astype(int),
             "Assists": player_history["ASSISTS"].astype(int),
         })
-        st.dataframe(breakdown, hide_index=True, width="stretch")
+        html_table(breakdown)
 
     def render_duels():
         st.markdown('<div class="section-title">🥊 Duels</div>', unsafe_allow_html=True)
@@ -1040,11 +1060,7 @@ if view_mode == "Player Stats":
                         text = f"{text} ({diff_text})"
                         colors.loc[i, col_name] = f"color: {color}; font-weight: 700;"
                     display.loc[i, col_name] = text
-            st.dataframe(
-                display.style.apply(lambda _: colors, axis=None),
-                hide_index=True,
-                width="stretch",
-            )
+            html_table(display, colors)
             n_gps = len(hist)
             st.caption(
                 f"Based on {n_gps} match{'es' if n_gps != 1 else ''} with GPS data. "
@@ -1189,7 +1205,7 @@ else:
             "GF": team_history["Goals Scored"].astype(int),
             "GA": team_history["Goals Conceded"].astype(int),
         })
-        st.dataframe(team_breakdown, hide_index=True, width="stretch")
+        html_table(team_breakdown)
 
     # ----------------------------------------------------------------------------
     # Shooting comparison — our shooting vs opponent shooting from Sheet3
@@ -1458,15 +1474,13 @@ else:
             ("Fastest Player of the Season", f"⚡ {top_name} · {fmt_kmh(top_val)} km/h" if top_name else "—"),
         ])
         hist = gps_match_totals.sort_values("__date", ascending=False)
-        st.dataframe(
+        html_table(
             pd.DataFrame({
                 "Match": hist["__matchup"],
                 "Total Distance (m)": hist["Total Distance"].map(fmt_m),
                 "Dist. 20→25 (m)": hist["Total Dist Speed"].map(fmt_m),
                 "Avg Max Speed": hist["Avg Max Speed"].map(fmt_kmh),
-            }),
-            hide_index=True,
-            width="stretch",
+            }).reset_index(drop=True)
         )
         st.caption(f"Based on {n_gps} match{'es' if n_gps != 1 else ''} with GPS data.")
 

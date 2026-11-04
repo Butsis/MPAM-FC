@@ -1,6 +1,7 @@
 import glob
 import os
 import base64
+from decimal import Decimal, ROUND_HALF_UP
 import html
 import unicodedata
 
@@ -598,8 +599,16 @@ def stat_table(pairs):
     st.markdown(f'<table class="stat-table">{rows_html}</table>', unsafe_allow_html=True)
 
 
+def round_half_up(value, digits=0):
+    """Round like people expect: .5 always goes up (12.5 → 13, 31.05 → 31.1).
+    Python's built-in rounding sends .5 to the even number (12.5 → 12) and is
+    thrown off by tiny float errors (31.05 stored as 31.0499999…)."""
+    cleaned = Decimal(repr(round(float(value), 9)))  # strip float noise first
+    return float(cleaned.quantize(Decimal(1).scaleb(-digits), rounding=ROUND_HALF_UP))
+
+
 def pct(won, total):
-    return f"{(won / total * 100):.0f}%" if total > 0 else "—"
+    return f"{round_half_up(won / total * 100):.0f}%" if total > 0 else "—"
 
 
 def fmt(n):
@@ -616,12 +625,12 @@ GPS_NEUTRAL_BAND = 3        # within ±3% of the average counts as "normal" (gra
 
 def fmt_m(v):
     """Meters, whole numbers with thousands separator."""
-    return "—" if v is None or pd.isna(v) else f"{v:,.0f}"
+    return "—" if v is None or pd.isna(v) else f"{round_half_up(v):,.0f}"
 
 
 def fmt_kmh(v):
     """Speed, 1 decimal."""
-    return "—" if v is None or pd.isna(v) else f"{v:.1f}"
+    return "—" if v is None or pd.isna(v) else f"{round_half_up(v, 1):.1f}"
 
 
 def gps_diff(this_val, avg_val):
@@ -630,7 +639,7 @@ def gps_diff(this_val, avg_val):
     number, so they always agree."""
     if this_val is None or avg_val is None or pd.isna(this_val) or pd.isna(avg_val) or avg_val == 0:
         return "—", "#9ca3af"
-    change = round((this_val - avg_val) / avg_val * 100)
+    change = int(round_half_up((this_val - avg_val) / avg_val * 100))
     if change > GPS_NEUTRAL_BAND:
         color = ORANGE
     elif change < -GPS_NEUTRAL_BAND:
@@ -1311,7 +1320,7 @@ else:
 
     def duel_row(label, won, total):
         if total > 0:
-            win_pct = round(won / total * 100)
+            win_pct = int(round_half_up(won / total * 100))
             pct_text = f"{win_pct}%"
             color = ORANGE if win_pct > 50 else "#ef4444" if win_pct < 50 else "#9ca3af"
         else:

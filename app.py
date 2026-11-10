@@ -759,9 +759,19 @@ def _count(label, fn, diff="event", better="high", fmt_kind="num"):
     return {"label": label, "kind": "count", "fn": fn, "diff": diff, "better": better, "fmt": fmt_kind}
 
 
-def _rate(label, num_cols, den_cols):
+def _rate(label, num_cols, den_cols, attempts=True):
     return {"label": label, "kind": "rate", "num": _cols(*num_cols), "den": _cols(*den_cols),
-            "diff": "pts", "better": "high", "fmt": "pct"}
+            "diff": "pts", "better": "high", "fmt": "pct", "attempts": attempts}
+
+
+def cmp_attempts(m, r):
+    """'3/5' under a % stat, so a 0% from a single duel reads as what it is."""
+    if not m.get("attempts"):
+        return ""
+    den = m["den"](r)
+    if den <= 0:
+        return ""
+    return f'<div class="mbm-sub">{fmt(m["num"](r))}/{fmt(den)}</div>'
 
 
 def _peak(label, fn):
@@ -815,7 +825,7 @@ COMPARE_GK = {
         _count("Goals Conceded", _cols("GOALS CONCEDED"), better="low"),
         _count("Big Chances Saved", _cols("BIG CHANCES SAVED")),
         _rate("Save %", ["SAVES INSIDE THE BOX", "SAVES OUTSIDE THE BOX"],
-              ["SAVES INSIDE THE BOX", "SAVES OUTSIDE THE BOX", "GOALS CONCEDED"]),
+              ["SAVES INSIDE THE BOX", "SAVES OUTSIDE THE BOX", "GOALS CONCEDED"], attempts=False),
     ],
     "Duels": CMP_DUELS,
     "Passing": CMP_PASSING,
@@ -957,12 +967,12 @@ if view_mode == "Compare":
                 body = "<tr><th></th><th>This Match</th></tr>"
             for m in metrics:
                 tv = cmp_value(m, this, unit_used)
-                body += f'<tr><td>{m["label"]}</td><td style="color:#e5e5e5;">{cmp_fmt(m, tv)}</td>'
+                body += f'<tr><td>{m["label"]}</td><td style="color:#e5e5e5;">{cmp_fmt(m, tv)}{cmp_attempts(m, this)}</td>'
                 if with_avg:
                     av = cmp_average(m, others, unit_used)
                     dtext, dcolor = cmp_diff(m, tv, av)
                     body += (f'<td style="color:#a3a3a3;">{cmp_fmt(m, av)}</td>'
-                             f'<td style="font-weight:700; color:{dcolor};">{dtext}</td>')
+                             f'<td style="font-weight:700; color:{dcolor}; white-space:nowrap;">{dtext}</td>')
                 body += "</tr>"
             st.markdown(f'<table class="compare-table">{body}</table>', unsafe_allow_html=True)
         if with_avg:
@@ -987,7 +997,7 @@ if view_mode == "Compare":
                      f'<div class="mbm-sub">{html.escape(sub)}</div></td>')
             for m in metrics:
                 tv = cmp_value(m, r, compare_unit)
-                cell = cmp_fmt(m, tv)
+                cell = cmp_fmt(m, tv) + cmp_attempts(m, r)
                 if can_compare and tv is not None:
                     av = cmp_average(m, others, compare_unit)
                     if av is not None:

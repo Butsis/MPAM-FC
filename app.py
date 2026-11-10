@@ -104,11 +104,7 @@ st.markdown(
         text-align: center;
         font-weight: 700;
     }}
-    .mbm-table th {{ white-space: normal; font-size: 0.68rem; line-height: 1.2; vertical-align: bottom; }}
-    .mbm-table td {{ text-align: center; vertical-align: top; }}
-    .mbm-table td:first-child {{ text-align: left; color: #e5e5e5; }}
-    .mbm-sub {{ font-size: 0.72rem; color: #8a8a8a; white-space: nowrap; }}
-    .mbm-diff {{ font-size: 0.74rem; font-weight: 700; white-space: nowrap; }}
+    .att-sub {{ font-size: 0.72rem; color: #8a8a8a; white-space: nowrap; }}
     .compare-table th:first-child {{
         text-align: left;
     }}
@@ -720,13 +716,13 @@ gps_match_totals = pd.DataFrame(
 
 
 # ============================================================================
-# COMPARE: a player vs his own season average, or his match-by-match trend
+# COMPARE: a player in one match vs his own season average (per match numbers)
 # ============================================================================
-# Rules (same as the GPS section):
+# Rules:
 #   * "His Avg" = his OTHER matches (never the one being compared) with
 #     GPS_MIN_MINUTES+ minutes; a comparison needs GPS_MIN_OTHER_MATCHES of them.
-#   * Per 90: counts are scaled to 90 minutes (appearances under
-#     GPS_MIN_MINUTES get no per-90 value). Percentages and Max Speed never scale.
+#     Short cameos are left out so they don't drag his average down.
+#   * % stats are pooled: total won / total attempts over those matches.
 #   * "+/-" is shown as % for big-volume stats, as a plain difference for rare
 #     events (goals, shots...), and for % stats as the gap between the two %s.
 #   * Colors: orange = better than his average, red = worse, gray = normal.
@@ -771,7 +767,7 @@ def cmp_attempts(m, r):
     den = m["den"](r)
     if den <= 0:
         return ""
-    return f'<div class="mbm-sub">{fmt(m["num"](r))}/{fmt(den)}</div>'
+    return f'<div class="att-sub">{fmt(m["num"](r))}/{fmt(den)}</div>'
 
 
 def _peak(label, fn):
@@ -790,7 +786,6 @@ CMP_PASSING = [
     _rate("Pass Accuracy %", ["ACCURATE PASSES"], PASS_COLS),
     _count("Progressive Passes", _cols("PROGRESSIVE PASSES")),
     _rate("Progressive Pass Accuracy %", ["ACCURATE PROGRESSIVE PASSES"], ["PROGRESSIVE PASSES"]),
-    _count("Crosses", _cols("CROSSES")),
     _rate("Cross Accuracy %", ["ACCURATE CROSSES"], ["CROSSES"]),
     _rate("Long Ball Accuracy %", ["SUCCESSFUL LONG BALLS"], ["TOTAL LONG BALLS"]),
 ]
@@ -816,6 +811,7 @@ COMPARE_OUTFIELD = {
         _count("Clearances", _cols("CLEARANCES")),
         _count("Ball Recoveries", _cols(*RECOVERY_COLS), diff="pct"),
         _count("Possessions Lost", _cols(*POSS_LOST_COLS), diff="pct", better="low"),
+        _count("Fouls Won", _cols("FOULS WON")),
         _count("Fouls Committed", _cols("FOULS COMMITTED"), better="low"),
     ],
     "GPS": CMP_GPS,
@@ -834,21 +830,15 @@ COMPARE_GK = {
 }
 
 
-def cmp_value(m, r, unit):
+def cmp_value(m, r):
     """A metric's value for one match row (None = not available)."""
     if m["kind"] == "rate":
         den = m["den"](r)
         return m["num"](r) / den * 100 if den > 0 else None
-    v = m["fn"](r)
-    if v is None:
-        return None
-    if m["kind"] == "peak" or unit == "Per Match":
-        return v
-    mins = float(r["MINUTES"])
-    return v / mins * 90 if mins >= GPS_MIN_MINUTES else None
+    return m["fn"](r)
 
 
-def cmp_average(m, rows, unit):
+def cmp_average(m, rows):
     """His average over `rows` (his other qualifying matches), or None if
     fewer than GPS_MIN_OTHER_MATCHES of them have this metric."""
     if m["kind"] == "rate":
@@ -856,7 +846,7 @@ def cmp_average(m, rows, unit):
         if len(valid) < GPS_MIN_OTHER_MATCHES:
             return None
         return sum(m["num"](r) for r in valid) / sum(m["den"](r) for r in valid) * 100
-    vals = [v for v in (cmp_value(m, r, unit) for r in rows) if v is not None]
+    vals = [v for v in (cmp_value(m, r) for r in rows) if v is not None]
     return sum(vals) / len(vals) if len(vals) >= GPS_MIN_OTHER_MATCHES else None
 
 
@@ -925,93 +915,49 @@ if view_mode == "Compare":
     st.markdown(f'<h2 style="margin:0.3rem 0 0.2rem 0;">{selected_player}</h2>', unsafe_allow_html=True)
     st.markdown(f"**Position:** {format_position(cmp_position)}")
 
-    ctrl1, ctrl2 = st.columns(2)
-    with ctrl1:
-        compare_mode = st.radio("Compare", ["vs Season Average", "Match by Match"],
-                                horizontal=True, key="compare_mode")
-    with ctrl2:
-        compare_unit = st.radio("Numbers", ["Per 90", "Per Match"], horizontal=True, key="compare_unit")
-
     def _label(r):
         return f'{r["__matchup"]} ({r["__date"].strftime("%d %b %Y")})'
 
-    def _qualifying_others(match_id):
-        return [r for r in cmp_records
-                if r["__match_id"] != match_id and float(r["MINUTES"]) >= GPS_MIN_MINUTES]
+    cmp_labels = [_label(r) for r in cmp_records]
+    if "compare_match" not in st.session_state or st.session_state["compare_match"] not in cmp_labels:
+        st.session_state["compare_match"] = cmp_labels[0]
+    chosen = st.selectbox("Match", cmp_labels, key="compare_match")
+    this = cmp_records[cmp_labels.index(chosen)]
+    mins = float(this["MINUTES"])
+    others = [r for r in cmp_records
+              if r["__match_id"] != this["__match_id"] and float(r["MINUTES"]) >= GPS_MIN_MINUTES]
+    short = mins < GPS_MIN_MINUTES
+    with_avg = not short and len(others) >= GPS_MIN_OTHER_MATCHES
+    st.caption(f"⏱️ {fmt(mins)}' played · {playing_type_label(this['Playing Type'])}")
+    if short:
+        st.caption(f"Short appearance (under {GPS_MIN_MINUTES}') — his numbers only, no comparison.")
+    elif not with_avg:
+        st.caption(f"Season comparison appears once he has {GPS_MIN_OTHER_MATCHES} other matches "
+                   f"with {GPS_MIN_MINUTES}+ minutes.")
 
-    if compare_mode == "vs Season Average":
-        cmp_labels = [_label(r) for r in cmp_records]
-        if "compare_match" not in st.session_state or st.session_state["compare_match"] not in cmp_labels:
-            st.session_state["compare_match"] = cmp_labels[0]
-        chosen = st.selectbox("Match", cmp_labels, key="compare_match")
-        this = cmp_records[cmp_labels.index(chosen)]
-        mins = float(this["MINUTES"])
-        others = _qualifying_others(this["__match_id"])
-        short = mins < GPS_MIN_MINUTES
-        with_avg = not short and len(others) >= GPS_MIN_OTHER_MATCHES
-        st.caption(f"⏱️ {fmt(mins)}' played · {playing_type_label(this['Playing Type'])}")
-        if short:
-            st.caption(f"Short appearance (under {GPS_MIN_MINUTES}') — raw numbers only, no comparison.")
-        elif not with_avg:
-            st.caption(f"Season comparison appears once he has {GPS_MIN_OTHER_MATCHES} other matches "
-                       f"with {GPS_MIN_MINUTES}+ minutes.")
-        unit_used = "Per Match" if short else compare_unit
-
-        for cat, metrics in cmp_categories.items():
-            st.markdown(f'<div class="section-title">{cat}</div>', unsafe_allow_html=True)
-            if cat == "GPS" and pd.isna(pd.to_numeric(this.get("GPS Distance"), errors="coerce")):
-                st.caption("No GPS data for this match.")
-                continue
-            if with_avg:
-                body = "<tr><th></th><th>This Match</th><th>His Avg</th><th>+/-</th></tr>"
-            else:
-                body = "<tr><th></th><th>This Match</th></tr>"
-            for m in metrics:
-                tv = cmp_value(m, this, unit_used)
-                body += f'<tr><td>{m["label"]}</td><td style="color:#e5e5e5;">{cmp_fmt(m, tv)}{cmp_attempts(m, this)}</td>'
-                if with_avg:
-                    av = cmp_average(m, others, unit_used)
-                    dtext, dcolor = cmp_diff(m, tv, av)
-                    body += (f'<td style="color:#a3a3a3;">{cmp_fmt(m, av)}</td>'
-                             f'<td style="font-weight:700; color:{dcolor}; white-space:nowrap;">{dtext}</td>')
-                body += "</tr>"
-            st.markdown(f'<table class="compare-table">{body}</table>', unsafe_allow_html=True)
+    for cat, metrics in cmp_categories.items():
+        st.markdown(f'<div class="section-title">{cat}</div>', unsafe_allow_html=True)
+        if cat == "GPS" and pd.isna(pd.to_numeric(this.get("GPS Distance"), errors="coerce")):
+            st.caption("No GPS data for this match.")
+            continue
         if with_avg:
-            st.caption(f"His Avg = his other {len(others)} matches with {GPS_MIN_MINUTES}+ minutes.")
-
-    else:  # Match by Match
-        cat_names = list(cmp_categories.keys())
-        if "compare_category" not in st.session_state or st.session_state["compare_category"] not in cat_names:
-            st.session_state["compare_category"] = cat_names[0]
-        cat = st.radio("Category", cat_names, horizontal=True, key="compare_category")
-        metrics = cmp_categories[cat]
-
-        # Compact for phones: opponent + date/minutes in the first column,
-        # each +/- in small colored text under its number.
-        head = "<tr><th>Match</th>" + "".join(f"<th>{html.escape(m['label'])}</th>" for m in metrics) + "</tr>"
-        body = ""
-        for r in cmp_records:
-            others = _qualifying_others(r["__match_id"])
-            can_compare = float(r["MINUTES"]) >= GPS_MIN_MINUTES and len(others) >= GPS_MIN_OTHER_MATCHES
-            sub = f'{r["__date"].strftime("%d %b")} · {fmt(float(r["MINUTES"]))}\''
-            body += (f'<tr><td>{html.escape(str(r["Opponent"]))}'
-                     f'<div class="mbm-sub">{html.escape(sub)}</div></td>')
-            for m in metrics:
-                tv = cmp_value(m, r, compare_unit)
-                cell = cmp_fmt(m, tv) + cmp_attempts(m, r)
-                if can_compare and tv is not None:
-                    av = cmp_average(m, others, compare_unit)
-                    if av is not None:
-                        dtext, dcolor = cmp_diff(m, tv, av)
-                        cell += f'<div class="mbm-diff" style="color:{dcolor};">{dtext}</div>'
-                body += f"<td>{cell}</td>"
+            body = "<tr><th></th><th>This Match</th><th>His Avg</th><th>+/-</th></tr>"
+        else:
+            body = "<tr><th></th><th>This Match</th></tr>"
+        for m in metrics:
+            tv = cmp_value(m, this)
+            body += f'<tr><td>{m["label"]}</td><td style="color:#e5e5e5;">{cmp_fmt(m, tv)}{cmp_attempts(m, this)}</td>'
+            if with_avg:
+                av = cmp_average(m, others)
+                dtext, dcolor = cmp_diff(m, tv, av)
+                body += (f'<td style="color:#a3a3a3;">{cmp_fmt(m, av)}</td>'
+                         f'<td style="font-weight:700; color:{dcolor}; white-space:nowrap;">{dtext}</td>')
             body += "</tr>"
-        st.markdown(f'<div style="overflow-x:auto;"><table class="compare-table mbm-table">{head}{body}</table></div>',
-                    unsafe_allow_html=True)
-        st.caption(
-            f"+/- = that match vs his average in his other matches ({GPS_MIN_MINUTES}+ min). "
-            + ("Per 90 is blank for appearances under 20'." if compare_unit == "Per 90" else "")
-        )
+        st.markdown(f'<table class="compare-table">{body}</table>', unsafe_allow_html=True)
+    if with_avg:
+        avg_mins = sum(float(r["MINUTES"]) for r in others) / len(others)
+        st.caption(f"His Avg = his other {len(others)} matches with {GPS_MIN_MINUTES}+ minutes "
+                   f"(he averaged {fmt(round_half_up(avg_mins))}' in them).")
 
     st.markdown("---")
     st.caption("MPAM FC · Player Progress")

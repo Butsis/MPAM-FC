@@ -784,7 +784,7 @@ CMP_DUELS = [
 CMP_PASSING = [
     _count("Total Passes", _cols(*PASS_COLS), diff="pct"),
     _rate("Pass Accuracy %", ["ACCURATE PASSES"], PASS_COLS),
-    _count("Progressive Passes", _cols("PROGRESSIVE PASSES")),
+    _count("Progressive Passes", _cols("PROGRESSIVE PASSES"), diff="pct"),
     _rate("Progressive Pass Accuracy %", ["ACCURATE PROGRESSIVE PASSES"], ["PROGRESSIVE PASSES"]),
     _rate("Cross Accuracy %", ["ACCURATE CROSSES"], ["CROSSES"]),
     _rate("Long Ball Accuracy %", ["SUCCESSFUL LONG BALLS"], ["TOTAL LONG BALLS"]),

@@ -487,6 +487,25 @@ if competition_filter != "All Games":
     if not matches:
         st.info(f"No {competition_filter} matches yet.")
         st.stop()
+
+# ---- Month filter ----
+# Same idea as Competition, and the two combine (e.g. League + October 2026):
+# everything — totals, averages, GPS and Compare baselines — uses only the
+# matches left after both filters. Only months that have matches are listed.
+def month_name(d):
+    return d.strftime("%B %Y")
+
+_month_keys = sorted({(m["date"].year, m["date"].month) for m in matches if m["date"] is not None}, reverse=True)
+month_options = ["All Months"] + [month_name(pd.Timestamp(year=y, month=mo, day=1)) for y, mo in _month_keys]
+st.sidebar.markdown("### 📅 Month")
+if "month_filter" not in st.session_state or st.session_state["month_filter"] not in month_options:
+    st.session_state["month_filter"] = "All Months"
+month_filter = st.sidebar.selectbox("Month", month_options, label_visibility="collapsed", key="month_filter")
+
+if month_filter != "All Months":
+    matches = [m for m in matches if m["date"] is not None and month_name(m["date"]) == month_filter]
+
+if competition_filter != "All Games" or month_filter != "All Months":
     _allowed_ids = {m["match_id"] for m in matches}
     combined_df = combined_df[combined_df["__match_id"].isin(_allowed_ids)]
     team_df = team_df[team_df["__match_id"].isin(_allowed_ids)]
@@ -494,8 +513,9 @@ if competition_filter != "All Games":
     gps_df = gps_df[gps_df["__match_id"].isin(_allowed_ids)]
     gps_team_df = gps_team_df[gps_team_df["__match_id"].isin(_allowed_ids)]
 
-# Shown in the All Games headers, e.g. "3 League Matches"
+# Shown in the All Games headers, e.g. "3 League Matches" / "· October 2026"
 scope_word = f"{competition_filter} " if competition_filter != "All Games" else ""
+month_suffix = f" · {month_filter}" if month_filter != "All Months" else ""
 
 if view_mode != "Compare":
     # ---- Match filter (searchable) ----
@@ -907,7 +927,7 @@ if view_mode == "Compare":
         <div class="center-header">
             <img src="data:image/png;base64,{LOGO_B64}">
             <p class="matchup">Compare</p>
-            <p class="team-sub">{n_scope} {scope_word}Match{'es' if n_scope != 1 else ''} · Player Progress</p>
+            <p class="team-sub">{n_scope} {scope_word}Match{'es' if n_scope != 1 else ''}{month_suffix} · Player Progress</p>
         </div>
         """,
         unsafe_allow_html=True,
@@ -1002,7 +1022,7 @@ if view_mode == "Player Stats":
     # ----------------------------------------------------------------------------
     if is_all_games:
         line1 = "All Games"
-        line2 = f"{len(matches)} {scope_word}Match{'es' if len(matches) != 1 else ''} · Season Review"
+        line2 = f"{len(matches)} {scope_word}Match{'es' if len(matches) != 1 else ''}{month_suffix} · {'Month' if month_suffix else 'Season'} Review"
     else:
         line1 = selected_match_meta["matchup"]
         line2 = f'{selected_match_meta["competition"]} · Player Review'
@@ -1396,7 +1416,7 @@ else:
     # ----------------------------------------------------------------------------
     if is_all_games_team:
         line1 = "All Games"
-        line2 = f"{len(matches)} {scope_word}Match{'es' if len(matches) != 1 else ''} · Team Review"
+        line2 = f"{len(matches)} {scope_word}Match{'es' if len(matches) != 1 else ''}{month_suffix} · Team Review"
     else:
         line1 = selected_match_meta["matchup"]
         line2 = f'{selected_match_meta["competition"]} · Team Review'

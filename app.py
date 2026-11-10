@@ -104,6 +104,11 @@ st.markdown(
         text-align: center;
         font-weight: 700;
     }}
+    .mbm-table th {{ white-space: normal; font-size: 0.68rem; line-height: 1.2; vertical-align: bottom; }}
+    .mbm-table td {{ text-align: center; vertical-align: top; }}
+    .mbm-table td:first-child {{ text-align: left; color: #e5e5e5; }}
+    .mbm-sub {{ font-size: 0.72rem; color: #8a8a8a; white-space: nowrap; }}
+    .mbm-diff {{ font-size: 0.74rem; font-weight: 700; white-space: nowrap; }}
     .compare-table th:first-child {{
         text-align: left;
     }}
@@ -466,7 +471,7 @@ st.sidebar.markdown(
 
 # ---- View toggle ----
 st.sidebar.markdown("### 📊 View")
-view_mode = st.sidebar.radio("View", ["Team Stats", "Player Stats"], label_visibility="collapsed", key="view_mode")
+view_mode = st.sidebar.radio("View", ["Team Stats", "Player Stats", "Compare"], label_visibility="collapsed", key="view_mode")
 
 # ---- Competition filter ----
 # Narrows the WHOLE app to the chosen competition: the match list, the
@@ -496,36 +501,42 @@ if competition_filter != "All Games":
 # Shown in the All Games headers, e.g. "3 League Matches"
 scope_word = f"{competition_filter} " if competition_filter != "All Games" else ""
 
-# ---- Match filter (searchable) ----
-st.sidebar.markdown("### 🗓️ Select Match")
-all_match_labels = [match_label(m) for m in matches] + ["All Games"]
-match_search = st.sidebar.text_input("Search match", placeholder="Type to search matches...", label_visibility="collapsed")
+if view_mode != "Compare":
+    # ---- Match filter (searchable) ----
+    st.sidebar.markdown("### 🗓️ Select Match")
+    all_match_labels = [match_label(m) for m in matches] + ["All Games"]
+    match_search = st.sidebar.text_input("Search match", placeholder="Type to search matches...", label_visibility="collapsed")
 
-if match_search:
-    filtered_match_labels = [l for l in all_match_labels if match_search.lower() in l.lower()]
-    if not filtered_match_labels:
+    if match_search:
+        filtered_match_labels = [l for l in all_match_labels if match_search.lower() in l.lower()]
+        if not filtered_match_labels:
+            filtered_match_labels = all_match_labels
+    else:
         filtered_match_labels = all_match_labels
+
+    # Make sure the stored selection is valid for the current option list BEFORE
+    # creating the widget, then let the widget's own key own the state from here
+    # on — this is what actually persists the user's click across reruns.
+    if "selected_match_label" not in st.session_state or st.session_state["selected_match_label"] not in filtered_match_labels:
+        st.session_state["selected_match_label"] = filtered_match_labels[0]
+
+    selected_match_label = st.sidebar.selectbox("Match", filtered_match_labels, key="selected_match_label")
+
+    if selected_match_label == "All Games":
+        selected_match_id = "ALL"
+        selected_match_meta = None
+    else:
+        selected_idx = all_match_labels.index(selected_match_label)
+        selected_match_meta = matches[selected_idx]
+        selected_match_id = selected_match_meta["match_id"]
+
 else:
-    filtered_match_labels = all_match_labels
-
-# Make sure the stored selection is valid for the current option list BEFORE
-# creating the widget, then let the widget's own key own the state from here
-# on — this is what actually persists the user's click across reruns.
-if "selected_match_label" not in st.session_state or st.session_state["selected_match_label"] not in filtered_match_labels:
-    st.session_state["selected_match_label"] = filtered_match_labels[0]
-
-selected_match_label = st.sidebar.selectbox("Match", filtered_match_labels, key="selected_match_label")
-
-if selected_match_label == "All Games":
+    selected_match_label = "All Games"
     selected_match_id = "ALL"
     selected_match_meta = None
-else:
-    selected_idx = all_match_labels.index(selected_match_label)
-    selected_match_meta = matches[selected_idx]
-    selected_match_id = selected_match_meta["match_id"]
 
-# ---- Player filter (searchable) — Player Stats view only ----
-if view_mode == "Player Stats":
+# ---- Player filter (searchable) — Player Stats and Compare views ----
+if view_mode in ("Player Stats", "Compare"):
     st.sidebar.markdown("### 🔍 Select Player")
     if selected_match_id == "ALL":
         scoped_df = combined_df
@@ -706,6 +717,294 @@ gps_match_totals = pd.DataFrame(
     _total_rows,
     columns=["__match_id", "__matchup", "__date", "Total Distance", "Total Dist Speed", "Top Speed", "Top Speed Player", "Avg Max Speed"],
 ).set_index("__match_id")
+
+
+# ============================================================================
+# COMPARE: a player vs his own season average, or his match-by-match trend
+# ============================================================================
+# Rules (same as the GPS section):
+#   * "His Avg" = his OTHER matches (never the one being compared) with
+#     GPS_MIN_MINUTES+ minutes; a comparison needs GPS_MIN_OTHER_MATCHES of them.
+#   * Per 90: counts are scaled to 90 minutes (appearances under
+#     GPS_MIN_MINUTES get no per-90 value). Percentages and Max Speed never scale.
+#   * "+/-" is shown as % for big-volume stats, as a plain difference for rare
+#     events (goals, shots...), and in percentage points for % stats.
+#   * Colors: orange = better than his average, red = worse, gray = normal.
+#     For "lower is better" stats (possessions lost, fouls...) this flips.
+SHOT_COLS = ["INSIDE ON TARGET", "INSIDE OFF TARGET", "INSIDE BLOCKED",
+             "OUTSIDE ON TARGET", "OUTSIDE OFF TARGET", "OUTSIDE BLOCKED"]
+DUEL_WON_COLS = ["OFFENSIVE DUELS WON", "DEFENSIVE DUELS WON", "AERIAL DUES WON"]
+DUEL_TOTAL_COLS = ["TOTAL OFFENSIVE DUELS", "TOTAL DEFENSIVE DUELS", "TOTAL AERIAL DUELS"]
+POSS_LOST_COLS = ["POSSESION LOST OWN HALF", "POSSESSION LOST OWN HALF LED TO A SHOT",
+                  "POSSESSION LOST OPPs HALF", "POSSESSION LOST OPPs HALF LED TO A SHOT"]
+RECOVERY_COLS = ["BALL RECOVERY OWN HALF", "BALL RECOVERY OWN HALF LED TO A SHOT",
+                 "BALL RECOVERY OPPs HALF", "BALL RECOVERY OPPs HALF LED TO A SHOT"]
+PASS_COLS = ["PASSES OWN HALF", "PASSES OPPS HALF"]
+CMP_GRAY = "#9ca3af"
+CMP_RED = "#ef4444"
+
+
+def _cols(*cols):
+    return lambda r: float(sum(float(r[c]) for c in cols))
+
+
+def _col_or_none(col):
+    def get(r):
+        v = pd.to_numeric(r.get(col), errors="coerce")
+        return None if pd.isna(v) else float(v)
+    return get
+
+
+def _count(label, fn, diff="event", better="high", fmt_kind="num"):
+    return {"label": label, "kind": "count", "fn": fn, "diff": diff, "better": better, "fmt": fmt_kind}
+
+
+def _rate(label, num_cols, den_cols):
+    return {"label": label, "kind": "rate", "num": _cols(*num_cols), "den": _cols(*den_cols),
+            "diff": "pts", "better": "high", "fmt": "pct"}
+
+
+def _peak(label, fn):
+    return {"label": label, "kind": "peak", "fn": fn, "diff": "pct", "better": "high", "fmt": "kmh"}
+
+
+CMP_DUELS = [
+    _count("Total Duels", _cols(*DUEL_TOTAL_COLS), diff="pct"),
+    _rate("Duels Won %", DUEL_WON_COLS, DUEL_TOTAL_COLS),
+    _rate("Offensive Duels Won %", ["OFFENSIVE DUELS WON"], ["TOTAL OFFENSIVE DUELS"]),
+    _rate("Defensive Duels Won %", ["DEFENSIVE DUELS WON"], ["TOTAL DEFENSIVE DUELS"]),
+    _rate("Aerial Duels Won %", ["AERIAL DUES WON"], ["TOTAL AERIAL DUELS"]),
+]
+CMP_PASSING = [
+    _count("Total Passes", _cols(*PASS_COLS), diff="pct"),
+    _rate("Pass Accuracy %", ["ACCURATE PASSES"], PASS_COLS),
+    _count("Progressive Passes", _cols("PROGRESSIVE PASSES")),
+    _rate("Progressive Pass Accuracy %", ["ACCURATE PROGRESSIVE PASSES"], ["PROGRESSIVE PASSES"]),
+    _count("Crosses", _cols("CROSSES")),
+    _rate("Long Ball Accuracy %", ["SUCCESSFUL LONG BALLS"], ["TOTAL LONG BALLS"]),
+]
+CMP_GPS = [
+    _count("Distance (meters)", _col_or_none("GPS Distance"), diff="pct", fmt_kind="m"),
+    _count("Dist. Speed 20→25", _col_or_none("GPS DistSpeed"), diff="pct", fmt_kind="m"),
+    _peak("Max Speed (km/h)", _col_or_none("GPS MaxSpeed")),
+]
+COMPARE_OUTFIELD = {
+    "Attacking": [
+        _count("Goals", _cols("GOAL")),
+        _count("Assists", _cols("ASSISTS")),
+        _count("Total Shots", _cols(*SHOT_COLS)),
+        _count("Shots On Target", _cols("INSIDE ON TARGET", "OUTSIDE ON TARGET")),
+        _count("Key Passes", _cols("KEY PASSES")),
+        _count("Big Chances Created", _cols("BIG CHANCES CREATED")),
+    ],
+    "Duels": CMP_DUELS,
+    "Passing": CMP_PASSING,
+    "Defending": [
+        _count("Tackles Won", _cols("TACKLES WON")),
+        _count("Interceptions", _cols("INTERCEPTIONS")),
+        _count("Clearances", _cols("CLEARANCES")),
+        _count("Ball Recoveries", _cols(*RECOVERY_COLS), diff="pct"),
+        _count("Possessions Lost", _cols(*POSS_LOST_COLS), diff="pct", better="low"),
+        _count("Fouls Committed", _cols("FOULS COMMITTED"), better="low"),
+    ],
+    "GPS": CMP_GPS,
+}
+COMPARE_GK = {
+    "Goalkeeping": [
+        _count("Saves", _cols("SAVES INSIDE THE BOX", "SAVES OUTSIDE THE BOX")),
+        _count("Goals Conceded", _cols("GOALS CONCEDED"), better="low"),
+        _count("Big Chances Saved", _cols("BIG CHANCES SAVED")),
+        _rate("Save %", ["SAVES INSIDE THE BOX", "SAVES OUTSIDE THE BOX"],
+              ["SAVES INSIDE THE BOX", "SAVES OUTSIDE THE BOX", "GOALS CONCEDED"]),
+    ],
+    "Duels": CMP_DUELS,
+    "Passing": CMP_PASSING,
+    "GPS": CMP_GPS,
+}
+
+
+def cmp_value(m, r, unit):
+    """A metric's value for one match row (None = not available)."""
+    if m["kind"] == "rate":
+        den = m["den"](r)
+        return m["num"](r) / den * 100 if den > 0 else None
+    v = m["fn"](r)
+    if v is None:
+        return None
+    if m["kind"] == "peak" or unit == "Per Match":
+        return v
+    mins = float(r["MINUTES"])
+    return v / mins * 90 if mins >= GPS_MIN_MINUTES else None
+
+
+def cmp_average(m, rows, unit):
+    """His average over `rows` (his other qualifying matches), or None if
+    fewer than GPS_MIN_OTHER_MATCHES of them have this metric."""
+    if m["kind"] == "rate":
+        valid = [r for r in rows if m["den"](r) > 0]
+        if len(valid) < GPS_MIN_OTHER_MATCHES:
+            return None
+        return sum(m["num"](r) for r in valid) / sum(m["den"](r) for r in valid) * 100
+    vals = [v for v in (cmp_value(m, r, unit) for r in rows) if v is not None]
+    return sum(vals) / len(vals) if len(vals) >= GPS_MIN_OTHER_MATCHES else None
+
+
+def cmp_fmt(m, v):
+    if v is None or pd.isna(v):
+        return "—"
+    if m["fmt"] == "pct":
+        return f"{round_half_up(v):.0f}%"
+    if m["fmt"] == "m":
+        return fmt_m(v)
+    if m["fmt"] == "kmh":
+        return fmt_kmh(v)
+    r1 = round_half_up(v, 1)
+    return f"{int(r1)}" if float(r1).is_integer() else f"{r1:.1f}"
+
+
+def cmp_diff(m, this_val, avg_val):
+    """(+/- text, color). Text and color come from the same rounded number."""
+    if this_val is None or avg_val is None:
+        return "—", CMP_GRAY
+    if m["diff"] == "pct":
+        if avg_val == 0:
+            return "—", CMP_GRAY
+        d = int(round_half_up((this_val - avg_val) / avg_val * 100))
+        text, band = f"{abs(d)}%", GPS_NEUTRAL_BAND
+    elif m["diff"] == "pts":
+        # from the two numbers as shown, so 56% vs 52% always reads +4 pts
+        d = int(round_half_up(this_val) - round_half_up(avg_val))
+        text, band = f"{abs(d)} pts", GPS_NEUTRAL_BAND
+    else:  # rare events: plain difference, again from the numbers as shown
+        d = round_half_up(round_half_up(this_val, 1) - round_half_up(avg_val, 1), 1)
+        text, band = f"{abs(d):.1f}", 0
+    sign = "+" if d > 0 else "−" if d < 0 else ""
+    if d > band:
+        color = ORANGE if m["better"] == "high" else CMP_RED
+    elif d < -band:
+        color = CMP_RED if m["better"] == "high" else ORANGE
+    else:
+        color = CMP_GRAY
+    return f"{sign}{text}", color
+
+
+if view_mode == "Compare":
+    cmp_player_rows = combined_df[combined_df["NAME"] == selected_player].copy()
+    _gps_cols = gps_df[["NAME", "__match_id", "Distance", "Max Speed", "Dist Speed 20-25"]].rename(
+        columns={"Distance": "GPS Distance", "Max Speed": "GPS MaxSpeed", "Dist Speed 20-25": "GPS DistSpeed"}
+    )
+    cmp_player_rows = cmp_player_rows.merge(_gps_cols, on=["NAME", "__match_id"], how="left")
+    cmp_player_rows = cmp_player_rows.sort_values("__date", ascending=False).reset_index(drop=True)
+    cmp_records = cmp_player_rows.to_dict("records")
+    _pos_mode = cmp_player_rows["POSITION"].mode()
+    cmp_position = _pos_mode.iat[0] if not _pos_mode.empty else cmp_player_rows["POSITION"].iloc[0]
+    cmp_categories = COMPARE_GK if str(cmp_position).strip().upper() == "GK" else COMPARE_OUTFIELD
+    n_scope = len(matches)
+
+    st.markdown(
+        f"""
+        <div class="center-header">
+            <img src="data:image/png;base64,{LOGO_B64}">
+            <p class="matchup">Compare</p>
+            <p class="team-sub">{n_scope} {scope_word}Match{'es' if n_scope != 1 else ''} · Player Progress</p>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+    st.markdown(f'<h2 style="margin:0.3rem 0 0.2rem 0;">{selected_player}</h2>', unsafe_allow_html=True)
+    st.markdown(f"**Position:** {format_position(cmp_position)}")
+
+    ctrl1, ctrl2 = st.columns(2)
+    with ctrl1:
+        compare_mode = st.radio("Compare", ["vs Season Average", "Match by Match"],
+                                horizontal=True, key="compare_mode")
+    with ctrl2:
+        compare_unit = st.radio("Numbers", ["Per 90", "Per Match"], horizontal=True, key="compare_unit")
+
+    def _label(r):
+        return f'{r["__matchup"]} ({r["__date"].strftime("%d %b %Y")})'
+
+    def _qualifying_others(match_id):
+        return [r for r in cmp_records
+                if r["__match_id"] != match_id and float(r["MINUTES"]) >= GPS_MIN_MINUTES]
+
+    if compare_mode == "vs Season Average":
+        cmp_labels = [_label(r) for r in cmp_records]
+        if "compare_match" not in st.session_state or st.session_state["compare_match"] not in cmp_labels:
+            st.session_state["compare_match"] = cmp_labels[0]
+        chosen = st.selectbox("Match", cmp_labels, key="compare_match")
+        this = cmp_records[cmp_labels.index(chosen)]
+        mins = float(this["MINUTES"])
+        others = _qualifying_others(this["__match_id"])
+        short = mins < GPS_MIN_MINUTES
+        with_avg = not short and len(others) >= GPS_MIN_OTHER_MATCHES
+        st.caption(f"⏱️ {fmt(mins)}' played · {playing_type_label(this['Playing Type'])}")
+        if short:
+            st.caption(f"Short appearance (under {GPS_MIN_MINUTES}') — raw numbers only, no comparison.")
+        elif not with_avg:
+            st.caption(f"Season comparison appears once he has {GPS_MIN_OTHER_MATCHES} other matches "
+                       f"with {GPS_MIN_MINUTES}+ minutes.")
+        unit_used = "Per Match" if short else compare_unit
+
+        for cat, metrics in cmp_categories.items():
+            st.markdown(f'<div class="section-title">{cat}</div>', unsafe_allow_html=True)
+            if cat == "GPS" and pd.isna(pd.to_numeric(this.get("GPS Distance"), errors="coerce")):
+                st.caption("No GPS data for this match.")
+                continue
+            if with_avg:
+                body = "<tr><th></th><th>This Match</th><th>His Avg</th><th>+/-</th></tr>"
+            else:
+                body = "<tr><th></th><th>This Match</th></tr>"
+            for m in metrics:
+                tv = cmp_value(m, this, unit_used)
+                body += f'<tr><td>{m["label"]}</td><td style="color:#e5e5e5;">{cmp_fmt(m, tv)}</td>'
+                if with_avg:
+                    av = cmp_average(m, others, unit_used)
+                    dtext, dcolor = cmp_diff(m, tv, av)
+                    body += (f'<td style="color:#a3a3a3;">{cmp_fmt(m, av)}</td>'
+                             f'<td style="font-weight:700; color:{dcolor};">{dtext}</td>')
+                body += "</tr>"
+            st.markdown(f'<table class="compare-table">{body}</table>', unsafe_allow_html=True)
+        if with_avg:
+            st.caption(f"His Avg = his other {len(others)} matches with {GPS_MIN_MINUTES}+ minutes.")
+
+    else:  # Match by Match
+        cat_names = list(cmp_categories.keys())
+        if "compare_category" not in st.session_state or st.session_state["compare_category"] not in cat_names:
+            st.session_state["compare_category"] = cat_names[0]
+        cat = st.radio("Category", cat_names, horizontal=True, key="compare_category")
+        metrics = cmp_categories[cat]
+
+        # Compact for phones: opponent + date/minutes in the first column,
+        # each +/- in small colored text under its number.
+        head = "<tr><th>Match</th>" + "".join(f"<th>{html.escape(m['label'])}</th>" for m in metrics) + "</tr>"
+        body = ""
+        for r in cmp_records:
+            others = _qualifying_others(r["__match_id"])
+            can_compare = float(r["MINUTES"]) >= GPS_MIN_MINUTES and len(others) >= GPS_MIN_OTHER_MATCHES
+            sub = f'{r["__date"].strftime("%d %b")} · {fmt(float(r["MINUTES"]))}\''
+            body += (f'<tr><td>{html.escape(str(r["Opponent"]))}'
+                     f'<div class="mbm-sub">{html.escape(sub)}</div></td>')
+            for m in metrics:
+                tv = cmp_value(m, r, compare_unit)
+                cell = cmp_fmt(m, tv)
+                if can_compare and tv is not None:
+                    av = cmp_average(m, others, compare_unit)
+                    if av is not None:
+                        dtext, dcolor = cmp_diff(m, tv, av)
+                        cell += f'<div class="mbm-diff" style="color:{dcolor};">{dtext}</div>'
+                body += f"<td>{cell}</td>"
+            body += "</tr>"
+        st.markdown(f'<div style="overflow-x:auto;"><table class="compare-table mbm-table">{head}{body}</table></div>',
+                    unsafe_allow_html=True)
+        st.caption(
+            f"+/- = that match vs his average in his other matches ({GPS_MIN_MINUTES}+ min). "
+            + ("Per 90 is blank for appearances under 20'." if compare_unit == "Per 90" else "")
+        )
+
+    st.markdown("---")
+    st.caption("MPAM FC · Player Progress")
+    st.stop()
 
 
 if view_mode == "Player Stats":

@@ -728,7 +728,7 @@ gps_match_totals = pd.DataFrame(
 #   * Per 90: counts are scaled to 90 minutes (appearances under
 #     GPS_MIN_MINUTES get no per-90 value). Percentages and Max Speed never scale.
 #   * "+/-" is shown as % for big-volume stats, as a plain difference for rare
-#     events (goals, shots...), and in percentage points for % stats.
+#     events (goals, shots...), and for % stats as the gap between the two %s.
 #   * Colors: orange = better than his average, red = worse, gray = normal.
 #     For "lower is better" stats (possessions lost, fouls...) this flips.
 SHOT_COLS = ["INSIDE ON TARGET", "INSIDE OFF TARGET", "INSIDE BLOCKED",
@@ -791,6 +791,7 @@ CMP_PASSING = [
     _count("Progressive Passes", _cols("PROGRESSIVE PASSES")),
     _rate("Progressive Pass Accuracy %", ["ACCURATE PROGRESSIVE PASSES"], ["PROGRESSIVE PASSES"]),
     _count("Crosses", _cols("CROSSES")),
+    _rate("Cross Accuracy %", ["ACCURATE CROSSES"], ["CROSSES"]),
     _rate("Long Ball Accuracy %", ["SUCCESSFUL LONG BALLS"], ["TOTAL LONG BALLS"]),
 ]
 CMP_GPS = [
@@ -882,9 +883,9 @@ def cmp_diff(m, this_val, avg_val):
         d = int(round_half_up((this_val - avg_val) / avg_val * 100))
         text, band = f"{abs(d)}%", GPS_NEUTRAL_BAND
     elif m["diff"] == "pts":
-        # from the two numbers as shown, so 56% vs 52% always reads +4 pts
+        # % stats: the gap between the two numbers as shown, so 56% vs 52% reads +4%
         d = int(round_half_up(this_val) - round_half_up(avg_val))
-        text, band = f"{abs(d)} pts", GPS_NEUTRAL_BAND
+        text, band = f"{abs(d)}%", GPS_NEUTRAL_BAND
     else:  # rare events: plain difference, again from the numbers as shown
         d = round_half_up(round_half_up(this_val, 1) - round_half_up(avg_val, 1), 1)
         text, band = f"{abs(d):.1f}", 0
